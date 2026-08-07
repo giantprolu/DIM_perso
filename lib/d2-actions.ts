@@ -159,7 +159,7 @@ export function findStatModSocket(
     const plugSetHash =
       entries[index].reusablePlugSetHash ?? entries[index].randomizedPlugSetHash;
     if (!plugSetHash) continue;
-    const set = defs.plugSets[plugSetHash];
+    const set = defs.plugSets?.[plugSetHash];
     const byStat = new Map<number, number>();
     for (const p of set?.reusablePlugItems ?? []) {
       const plugDef = defs.items[p.plugItemHash];

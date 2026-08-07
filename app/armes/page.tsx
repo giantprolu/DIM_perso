@@ -125,7 +125,7 @@ export default function WeaponsPage() {
 
       const inst = instances[item.itemInstanceId];
       const damageHash = inst?.damageTypeHash ?? def.defaultDamageTypeHash ?? 0;
-      const damageDef = d.damageTypes[damageHash];
+      const damageDef = d.damageTypes?.[damageHash];
 
       const socketStates = socketsData[item.itemInstanceId]?.sockets ?? [];
       const categories = def.sockets?.socketCategories ?? [];

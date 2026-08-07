@@ -88,7 +88,7 @@ function collectRecordHashes(
   depth = 3
 ): number[] {
   if (!nodeHash || depth < 0) return [];
-  const node = defs.nodes[nodeHash];
+  const node = defs.nodes?.[nodeHash];
   if (!node) return [];
   const out: number[] = [];
   for (const r of node.children?.records ?? []) out.push(r.recordHash);
@@ -264,7 +264,7 @@ export default function QuestsPage() {
 
   function buildRecordVM(hash: number): RecordVM | null {
     if (!defs) return null;
-    const def = defs.records[hash];
+    const def = defs.records?.[hash];
     if (!def || def.redacted) return null;
     const name = def.displayProperties?.name;
     if (!name) return null;
@@ -291,9 +291,9 @@ export default function QuestsPage() {
     const seasonHash = profile.profile?.data?.currentSeasonHash;
     if (!seasonHash) return [];
     const rootHash =
-      defs.seasons[seasonHash]?.seasonalChallengesPresentationNodeHash;
+      defs.seasons?.[seasonHash]?.seasonalChallengesPresentationNodeHash;
     if (!rootHash) return [];
-    const root = defs.nodes[rootHash];
+    const root = defs.nodes?.[rootHash];
     if (!root) return [];
 
     const groups: RecordGroup[] = [];
@@ -304,7 +304,7 @@ export default function QuestsPage() {
       groups.push({ name: "Défis", records: directRecords });
     }
     for (const child of root.children?.presentationNodes ?? []) {
-      const node = defs.nodes[child.presentationNodeHash];
+      const node = defs.nodes?.[child.presentationNodeHash];
       if (!node) continue;
       const records = collectRecordHashes(child.presentationNodeHash, defs)
         .map((h) => buildRecordVM(h))
@@ -322,7 +322,7 @@ export default function QuestsPage() {
 
   const ranks = useMemo(() => {
     if (!defs) return [];
-    return Object.values(defs.guardianRanks)
+    return Object.values(defs.guardianRanks ?? {})
       .filter((r) => r.presentationNodeHash)
       .sort((a, b) => a.rankNumber - b.rankNumber);
   }, [defs]);
