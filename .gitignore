@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# env & secrets — ne JAMAIS committer
+.env
+.env.local
+.env*.local
+*.pem
+
+# vercel (contient parfois des secrets générés)
+.vercel/
+
+# divers
+.DS_Store
+npm-debug.log*
+*.tsbuildinfo
