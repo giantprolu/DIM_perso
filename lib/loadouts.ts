@@ -93,14 +93,16 @@ function capturePlugs(
 }
 
 /**
- * Capture l'équipement complet d'un personnage (armes + armures +
- * sous-classe, plugs compris) depuis un profil frais.
+ * Capture l'équipement complet actuellement porté par un personnage
+ * (armes + armures + sous-classe, mods et fragments compris).
  */
-export function captureEquipment(
+export function captureEquippedLoadout(
   defs: Defs,
   data: ProfileResponse,
-  characterId: string
-): SavedItem[] {
+  characterId: string,
+  classType: number,
+  name: string
+): Loadout {
   const equipped = data.characterEquipment?.data?.[characterId]?.items ?? [];
   const items: SavedItem[] = [];
   for (const item of equipped) {
@@ -113,5 +115,11 @@ export function captureEquipment(
       plugs: capturePlugs(defs, data, item.itemInstanceId, item.itemHash),
     });
   }
-  return items;
+  return {
+    id: crypto.randomUUID(),
+    name,
+    classType,
+    createdAt: new Date().toISOString(),
+    items,
+  };
 }

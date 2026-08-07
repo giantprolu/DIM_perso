@@ -110,7 +110,7 @@ export default function LoadoutsPage() {
       setLoadouts(next);
       persistLoadouts(next);
       setName("");
-      pushLog(`💾 Loadout « ${loadout.name} » enregistré (${items.length} objets, mods et sous-classe compris).`);
+      pushLog(`💾 Loadout « ${loadout.name} » enregistré (${loadout.items.length} objets, mods et sous-classe compris).`);
     } catch (e) {
       pushLog(`❌ ${e instanceof Error ? e.message : "Erreur"}`);
     } finally {

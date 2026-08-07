@@ -31,6 +31,11 @@ import {
   persistLoadouts,
   type Loadout,
 } from "@/lib/loadouts";
+import {
+  captureEquippedLoadout,
+  loadLoadouts,
+  persistLoadouts,
+} from "@/lib/loadouts";
 import type {
   Character,
   Defs,
@@ -98,6 +103,7 @@ export default function OptimizerPage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [targetChar, setTargetChar] = useState("");
   const [busy, setBusy] = useState(false);
+  const [saveAfter, setSaveAfter] = useState(true);
   const [log, setLog] = useState<string[]>([]);
   const [saveAsLoadout, setSaveAsLoadout] = useState(true);
 
@@ -781,7 +787,18 @@ export default function OptimizerPage() {
                           className="checkbox checkbox-primary checkbox-xs"
                         />
                       </label>
-                      <div className="card-actions justify-end">
+                      <div className="card-actions justify-end items-center">
+                        <label className="label cursor-pointer justify-start gap-2 py-0 mr-auto">
+                          <input
+                            type="checkbox"
+                            checked={saveAfter}
+                            onChange={(e) => setSaveAfter(e.target.checked)}
+                            className="checkbox checkbox-primary checkbox-xs"
+                          />
+                          <span className="label-text text-xs">
+                            💾 Sauvegarder en loadout après équipement
+                          </span>
+                        </label>
                         {simulateMods && sel.mods.some((n) => n > 0) && (
                           <button
                             className="btn btn-outline btn-sm"
