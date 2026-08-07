@@ -27,6 +27,10 @@ const TABLES = [
   "DestinySeasonDefinition",
   "DestinyGuardianRankDefinition",
   "DestinyPlugSetDefinition",
+  "DestinyLoadoutNameDefinition",
+  "DestinyLoadoutIconDefinition",
+  "DestinyLoadoutColorDefinition",
+  "DestinyLoadoutConstantsDefinition",
 ] as const;
 
 /** Change quand la liste des tables évolue → invalide les caches. */
@@ -141,6 +145,10 @@ export async function loadDefs(onProgress: (msg: string) => void): Promise<Defs>
       seasons: tables["DestinySeasonDefinition"],
       guardianRanks: tables["DestinyGuardianRankDefinition"],
       plugSets: tables["DestinyPlugSetDefinition"],
+      loadoutNames: tables["DestinyLoadoutNameDefinition"],
+      loadoutIcons: tables["DestinyLoadoutIconDefinition"],
+      loadoutColors: tables["DestinyLoadoutColorDefinition"],
+      loadoutConstants: tables["DestinyLoadoutConstantsDefinition"],
     } as Defs;
 
     memoryCache = { schema: SCHEMA, defs };

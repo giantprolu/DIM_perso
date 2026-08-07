@@ -15,8 +15,9 @@ const SCOPES: Record<string, string> = {
   // 100 profil (saison, rang), 200 personnages, 201 inventaires,
   // 301 objectifs d'items, 900 archives (défis, rangs)
   quests: "100,200,201,301,900",
-  // 102 coffre, 205 équipé, 300 instances, 304 stats, 305 sockets
-  gear: "102,200,201,205,300,304,305",
+  // 102 coffre, 205 équipé, 206 loadouts en jeu, 300 instances,
+  // 304 stats, 305 sockets
+  gear: "102,200,201,205,206,300,304,305",
 };
 
 export async function GET(request: NextRequest) {

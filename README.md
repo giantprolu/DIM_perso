@@ -21,6 +21,11 @@ l'essentiel :
   sous-classe avec aspects et fragments) puis réapplique-le : rapatriement
   des objets depuis le coffre ou les autres personnages, équipement,
   restauration des mods via `InsertSocketPlugFree`.
+- **Loadouts en jeu (Lightfall)** — visualise les slots du personnage
+  (icône, couleur, nom), équipe ou vide un slot, snapshot l'équipement
+  actuel, ou pousse un loadout du site dans un slot (application puis
+  `SnapshotLoadout`) : il apparaît directement dans le menu de personnage
+  en jeu.
 - **Actions en jeu** — équiper une arme ou l'envoyer au coffre directement
   depuis la page Armes.
 

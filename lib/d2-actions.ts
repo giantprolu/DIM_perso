@@ -40,6 +40,15 @@ export const insertPlug = (p: {
   plugItemHash: number;
 }) => apiPost("/api/d2/insert-plug", p);
 
+export const loadoutAction = (p: {
+  action: "snapshot" | "equip" | "clear" | "rename";
+  loadoutIndex: number;
+  characterId: string;
+  colorHash?: number;
+  iconHash?: number;
+  nameHash?: number;
+}) => apiPost("/api/d2/loadout", p);
+
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface ItemLocation {
