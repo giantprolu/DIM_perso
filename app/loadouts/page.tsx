@@ -277,17 +277,17 @@ export default function LoadoutsPage() {
 
   if (phase === "loading") {
     return (
-      <div className="status">
-        <div className="spinner" />
-        <div>{statusMsg}</div>
+      <div className="flex flex-col items-center gap-4 py-16 opacity-70">
+        <span className="loading loading-spinner loading-lg text-primary" />
+        <div className="text-sm">{statusMsg}</div>
       </div>
     );
   }
 
   if (phase === "unauth") {
     return (
-      <div className="status">
-        <p>Connecte-toi pour gérer tes loadouts.</p>
+      <div className="flex flex-col items-center gap-4 py-16">
+        <p className="opacity-70">Connecte-toi pour gérer tes loadouts.</p>
         <a className="btn btn-primary" href="/api/auth/login">
           Se connecter avec Bungie.net
         </a>
@@ -296,20 +296,24 @@ export default function LoadoutsPage() {
   }
 
   if (phase === "error") {
-    return <div className="error-box">{error}</div>;
+    return (
+      <div role="alert" className="alert alert-error">
+        <span>{error}</span>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <h1>Loadouts</h1>
-      <p style={{ color: "var(--text-dim)" }}>
+    <div className="flex flex-col gap-4">
+      <h1 className="text-2xl font-semibold">Loadouts</h1>
+      <p className="text-sm opacity-70 max-w-2xl">
         Enregistre un personnage complet — armes, armures, mods, sous-classe
         (aspects et fragments) — puis réapplique-le en un clic. Les objets
         sont rapatriés depuis le coffre ou les autres personnages
         automatiquement.
       </p>
 
-      <div className="char-row">
+      <div className="flex gap-2.5 flex-wrap">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -331,17 +335,19 @@ export default function LoadoutsPage() {
         ))}
       </div>
 
-      <div className="card save-row">
+      <div className="card bg-base-200 shadow">
+        <div className="card-body p-4 flex-row flex-wrap items-center gap-3">
         <input
-          className="search-input"
+          className="input input-bordered input-sm flex-1 min-w-64"
           placeholder="Nom du loadout (ex. Raid — Grenade Solaire)"
           value={name}
           onChange={(e) => setName(e.target.value)}
           disabled={busy}
         />
-        <button className="btn btn-primary" onClick={saveCurrent} disabled={busy}>
+        <button className="btn btn-primary btn-sm" onClick={saveCurrent} disabled={busy}>
           💾 Enregistrer l&apos;équipement actuel
         </button>
+        </div>
       </div>
 
       {log.length > 0 && (
@@ -353,7 +359,7 @@ export default function LoadoutsPage() {
       )}
 
       {loadouts.length === 0 ? (
-        <div className="status">
+        <div className="opacity-60 py-8 text-center">
           Aucun loadout enregistré pour l&apos;instant. Équipe ton personnage
           en jeu, puis clique « Enregistrer ».
         </div>
@@ -361,19 +367,20 @@ export default function LoadoutsPage() {
         loadouts.map((l) => {
           const sameClass = l.classType === currentChar?.classType;
           return (
-            <div className="build-card" key={l.id}>
-              <div className="build-header">
-                <span className="build-rank">
-                  {l.name}{" "}
-                  <span className="group-count">
-                    · {CLASS_NAMES[l.classType]}
+            <div className="card bg-base-200 shadow" key={l.id}>
+              <div className="card-body p-5">
+              <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                <span className="card-title text-base">
+                  {l.name}
+                  <span className="badge badge-sm badge-outline badge-primary">
+                    {CLASS_NAMES[l.classType]}
                   </span>
                 </span>
-                <span className="build-total">
+                <span className="text-xs opacity-50">
                   {new Date(l.createdAt).toLocaleDateString("fr-FR")}
                 </span>
               </div>
-              <div className="loadout-icons">
+              <div className="loadout-icons flex gap-1.5 flex-wrap my-2">
                 {l.items.map((it) => {
                   const def = defs?.items[it.itemHash];
                   const icon = def?.displayProperties?.icon;
@@ -388,7 +395,7 @@ export default function LoadoutsPage() {
                   ) : null;
                 })}
               </div>
-              <div className="item-actions">
+              <div className="card-actions justify-end">
                 <button
                   className="btn btn-sm btn-primary"
                   disabled={busy || !sameClass}
@@ -402,19 +409,20 @@ export default function LoadoutsPage() {
                   Appliquer sur {CLASS_NAMES[currentChar?.classType ?? 0]}
                 </button>
                 <button
-                  className="btn btn-sm"
+                  className="btn btn-sm btn-ghost"
                   disabled={busy}
                   onClick={() => removeLoadout(l.id)}
                 >
                   Supprimer
                 </button>
               </div>
+              </div>
             </div>
           );
         })
       )}
 
-      <p className="note">
+      <p className="text-xs opacity-50">
         L&apos;équipement échoue dans certaines activités : mets-toi en orbite
         ou dans un espace social. Les objets au maître des postes ou équipés
         sur un autre personnage sont signalés et ignorés.

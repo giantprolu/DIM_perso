@@ -9,6 +9,7 @@ import {
   BUNGIE_ROOT,
   CLASS_NAMES,
   ITEM_TYPE_ARMOR,
+  STAT_CAP,
   TIER_EXOTIC,
 } from "@/lib/destiny-constants";
 import {
@@ -38,23 +39,20 @@ interface ArmorPiece extends EnginePiece {
   name: string;
   icon?: string;
   classType: number;
-  /** Stats affichées en jeu (mods actuels compris) */
   displayedStats: number[];
-  /** Stats de base (mods actuels retirés) */
   baseStats: number[];
 }
 
 const WEIGHT_OPTIONS = [
-  { v: 0, label: "Ignorer" },
-  { v: 1, label: "Faible" },
-  { v: 2, label: "Moyen" },
-  { v: 3, label: "Fort" },
+  { v: 0, label: "Ign" },
+  { v: 1, label: "×1" },
+  { v: 2, label: "×2" },
+  { v: 3, label: "×3" },
 ];
 
 /**
  * Stats de base ≈ stats affichées − contribution des mods amovibles
  * (plugs dont la catégorie commence par "enhancements.").
- * Le masterwork et l'intrinsèque de la pièce restent inclus.
  */
 function computeBaseStats(
   displayed: number[],
@@ -89,6 +87,7 @@ export default function OptimizerPage() {
   const [useBaseStats, setUseBaseStats] = useState(true);
   const [simulateMods, setSimulateMods] = useState(true);
   const [builds, setBuilds] = useState<Build[] | null>(null);
+  const [selBuild, setSelBuild] = useState(0);
   const [computing, setComputing] = useState(false);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [targetChar, setTargetChar] = useState("");
@@ -113,7 +112,6 @@ export default function OptimizerPage() {
         if (cancelled) return;
         setProfile(data);
 
-        // Rassembler tous les items : coffre + inventaires + équipé
         const allItems: ProfileItem[] = [
           ...(data.profileInventory?.data?.items ?? []),
           ...Object.values(data.characterInventories?.data ?? {}).flatMap(
@@ -150,7 +148,7 @@ export default function OptimizerPage() {
             itemHash: item.itemHash,
             slot,
             isExotic: def.inventory?.tierType === TIER_EXOTIC,
-            stats: baseStats, // remplacé au calcul selon le mode
+            stats: baseStats,
             displayedStats,
             baseStats,
             name: def.displayProperties?.name || `Objet ${item.itemHash}`,
@@ -160,8 +158,6 @@ export default function OptimizerPage() {
         }
 
         setPieces(pool);
-
-        // Classe par défaut : personnage joué le plus récemment
         const chars = Object.values(data.characters?.data ?? {});
         chars.sort(
           (a, b) =>
@@ -231,7 +227,7 @@ export default function OptimizerPage() {
     if (!defs || !targetChar || busy) return;
     setBusy(true);
     setLog([]);
-    pushLog("▶️ Application du build…");
+    pushLog("▶️ Application de l'assemblage…");
     try {
       const res = await fetch("/api/bungie/profile?scope=gear");
       if (!res.ok) throw new Error("profil illisible");
@@ -256,19 +252,23 @@ export default function OptimizerPage() {
 
       if (toEquip.length > 0) {
         pushLog(`🎽 Équipement de ${toEquip.length} pièces…`);
-        const eq = await equipItems({ itemIds: toEquip, characterId: targetChar });
+        const eq = await equipItems({
+          itemIds: toEquip,
+          characterId: targetChar,
+        });
         for (const r of eq.results) {
           if (r.equipStatus !== 1) {
             const name =
               pieceById.get(r.itemInstanceId)?.name ?? r.itemInstanceId;
-            pushLog(`⚠️ ${name} : non équipée (code ${r.equipStatus} — es-tu en orbite ?)`);
+            pushLog(
+              `⚠️ ${name} : non équipée (code ${r.equipStatus} — es-tu en orbite ?)`
+            );
           }
         }
         await sleep(300);
       }
 
       if (withMods) {
-        // Distribue les mods +10 suggérés : un emplacement général par pièce
         const flat: number[] = [];
         b.mods.forEach((n, i) => {
           for (let k = 0; k < n; k++) flat.push(ARMOR_STAT_HASHES[i]);
@@ -281,7 +281,9 @@ export default function OptimizerPage() {
           const statHash = flat[0];
           const plugHash = socket?.byStat.get(statHash);
           if (!socket || !plugHash) {
-            pushLog(`⚠️ ${piece.name} : emplacement de mod de stats introuvable.`);
+            pushLog(
+              `⚠️ ${piece.name} : emplacement de mod de stats introuvable.`
+            );
             continue;
           }
           flat.shift();
@@ -322,7 +324,7 @@ export default function OptimizerPage() {
   function run() {
     setComputing(true);
     setBuilds(null);
-    // Laisse le temps au spinner de s'afficher avant le calcul synchrone
+    setSelBuild(0);
     setTimeout(() => {
       const enginePieces = classPieces.map((p) => ({
         ...p,
@@ -342,17 +344,17 @@ export default function OptimizerPage() {
 
   if (phase === "loading") {
     return (
-      <div className="status">
-        <div className="spinner" />
-        <div>{statusMsg}</div>
+      <div className="flex flex-col items-center gap-4 py-16 opacity-70">
+        <span className="loading loading-spinner loading-lg text-primary" />
+        <div className="text-sm">{statusMsg}</div>
       </div>
     );
   }
 
   if (phase === "unauth") {
     return (
-      <div className="status">
-        <p>Connecte-toi pour utiliser l&apos;optimiseur.</p>
+      <div className="flex flex-col items-center gap-4 py-16">
+        <p className="opacity-70">Connecte-toi pour utiliser l&apos;optimiseur.</p>
         <a className="btn btn-primary" href="/api/auth/login">
           Se connecter avec Bungie.net
         </a>
@@ -361,305 +363,438 @@ export default function OptimizerPage() {
   }
 
   if (phase === "error") {
-    return <div className="error-box">{error}</div>;
+    return (
+      <div role="alert" className="alert alert-error">
+        <span>{error}</span>
+      </div>
+    );
   }
 
-  return (
-    <div>
-      <h1>Optimiseur d&apos;armure</h1>
-      <p style={{ color: "var(--text-dim)" }}>
-        {classPieces.length} pièces d&apos;armure analysées pour cette classe
-        (coffre + personnages + équipé).
-      </p>
+  const sel = builds && builds.length > 0 ? builds[Math.min(selBuild, builds.length - 1)] : null;
 
-      <details className="guide card">
-        <summary>📖 Guide de l&apos;optimiseur — comment ça marche</summary>
-        <div className="guide-body">
-          <h4>Le principe</h4>
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h1 className="text-2xl font-semibold">Optimiseur d&apos;armure</h1>
+        <span className="badge badge-ghost">
+          {classPieces.length} pièces analysées
+        </span>
+      </div>
+
+      <div className="collapse collapse-arrow bg-base-200 shadow">
+        <input type="checkbox" />
+        <div className="collapse-title font-medium text-primary">
+          📖 Guide de l&apos;optimiseur — comment ça marche
+        </div>
+        <div className="collapse-content text-sm opacity-80 flex flex-col gap-2">
           <p>
             Le moteur teste les combinaisons casque × gants × torse × jambes ×
-            objet de classe parmi <em>tes</em> pièces, puis classe les builds
-            par un score : la somme de tes 6 stats, chacune multipliée par le
-            poids que tu lui donnes.
+            objet de classe parmi <em>tes</em> pièces, puis classe les
+            assemblages par un score : la somme de tes 6 stats, chacune
+            multipliée par le poids choisi (Ign / ×1 / ×2 / ×3).
           </p>
-          <h4>Classe</h4>
           <p>
-            Seules les armures de la classe choisie sont prises en compte. Par
-            défaut : ton dernier personnage joué.
+            <strong>Exotique verrouillé</strong> : imposé dans son emplacement,
+            le reste en légendaire (une seule pièce exotique par assemblage).
+            <strong> Minimum</strong> : tout assemblage sous ce seuil pour la
+            stat est éliminé — les valeurs en rouge signalent un minimum non
+            atteint.
           </p>
-          <h4>Exotique verrouillé</h4>
           <p>
-            Choisis l&apos;exotique autour duquel tu construis : il sera imposé
-            dans son emplacement, et les autres emplacements ne contiendront
-            que du légendaire (une seule pièce exotique par build, comme en
-            jeu). « Aucun exotique » = build 100&nbsp;% légendaire.
+            <strong>Stats de base</strong> (recommandé) : les mods actuellement
+            posés sont retirés du calcul, tu compares le vrai potentiel des
+            armures. <strong>Simulation des mods</strong> : un mod +10 par
+            pièce, placés d&apos;abord pour tes minimums puis dans ta stat la
+            plus pondérée — la ligne « mods » de chaque assemblage te dit quoi
+            poser, et « Équiper + poser les mods » le fait pour toi.
           </p>
-          <h4>Priorités (poids)</h4>
           <p>
-            <strong>Ignorer</strong> = la stat ne compte pas dans le score.
-            <strong> Faible / Moyen / Fort</strong> = ×1 / ×2 / ×3. Exemple
-            build grenade : Grenade sur Fort, Super sur Moyen, le reste sur
-            Faible ou Ignorer.
-          </p>
-          <h4>Minimum</h4>
-          <p>
-            Seuil obligatoire : tout build sous ce total pour la stat est
-            éliminé. Utile pour garantir par exemple 100 en Santé quoi
-            qu&apos;il arrive. Les cases en rouge dans les résultats signalent
-            un minimum non atteint.
-          </p>
-          <h4>Stats de base vs affichées</h4>
-          <p>
-            <strong>Stats de base</strong> (recommandé) : le moteur retire la
-            contribution des mods actuellement posés sur tes pièces — tu
-            compares le vrai potentiel des armures, puisque les mods se
-            déplacent librement. <strong>Stats affichées</strong> : telles
-            quelles en jeu, mods compris.
-          </p>
-          <h4>Simulation des mods de stats</h4>
-          <p>
-            Le moteur suppose un mod de stat (+10) par pièce, soit 5 mods : il
-            les place d&apos;abord pour atteindre tes minimums, puis met le
-            reste dans ta stat la plus pondérée. La ligne « Mods suggérés »
-            de chaque build te dit quoi poser.
-          </p>
-          <h4>Et les armes ?</h4>
-          <p>
-            Les armes ne portent pas de stats d&apos;armure : elles
-            n&apos;entrent pas dans ce calcul. Ton arsenal complet (perks et
-            mods compris) est sur la page <a href="/armes">Armes</a>.
+            Les armes ne portent pas de stats d&apos;armure : ton arsenal
+            complet est sur la page <a className="link link-primary" href="/armes">Armes</a>.
           </p>
         </div>
-      </details>
+      </div>
 
-      <div className="opt-controls">
-        <div className="tabs">
-          {Object.entries(CLASS_NAMES).map(([value, label]) => (
-            <button
-              key={value}
-              className={`tab${selectedClass === Number(value) ? " active" : ""}`}
-              onClick={() => {
-                setSelectedClass(Number(value));
-                setExoticHash("none");
-                setBuilds(null);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        {/* ── Panneau de réglages ── */}
+        <div className="card bg-base-200 shadow">
+          <div className="card-body gap-4 p-5">
+            <h2 className="card-title text-base">Réglages</h2>
 
-        <div className="field card">
-          <label htmlFor="exotic">Exotique verrouillé</label>
-          <select
-            id="exotic"
-            value={exoticHash}
-            onChange={(e) => setExoticHash(e.target.value)}
-          >
-            <option value="none">Aucun exotique (build légendaire)</option>
-            {exotics.map((x) => (
-              <option key={x.itemHash} value={x.itemHash}>
-                {x.name} — {ARMOR_BUCKETS[x.slot]}
-              </option>
+            <div role="tablist" className="tabs tabs-boxed tabs-sm">
+              {Object.entries(CLASS_NAMES).map(([value, label]) => (
+                <a
+                  key={value}
+                  role="tab"
+                  className={`tab${selectedClass === Number(value) ? " tab-active" : ""}`}
+                  onClick={() => {
+                    setSelectedClass(Number(value));
+                    setExoticHash("none");
+                    setBuilds(null);
+                  }}
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+
+            <div className="form-control">
+              <div className="label py-0">
+                <span className="label-text text-sm">Exotique verrouillé</span>
+              </div>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={exoticHash}
+                onChange={(e) => setExoticHash(e.target.value)}
+              >
+                <option value="none">Aucun exotique</option>
+                {exotics.map((x) => (
+                  <option key={x.itemHash} value={x.itemHash}>
+                    {x.name} — {ARMOR_BUCKETS[x.slot]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {classChars.length > 0 && (
+              <div className="form-control">
+                <div className="label py-0">
+                  <span className="label-text text-sm">Personnage cible</span>
+                </div>
+                <select
+                  className="select select-bordered select-sm w-full"
+                  value={targetChar}
+                  onChange={(e) => setTargetChar(e.target.value)}
+                >
+                  {classChars.map((c) => (
+                    <option key={c.characterId} value={c.characterId}>
+                      {CLASS_NAMES[c.classType]} — ✦ {c.light}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="divider my-0" />
+
+            {statNames.map((name, i) => (
+              <div className="form-control" key={ARMOR_STAT_HASHES[i]}>
+                <div className="label py-0">
+                  <span className="label-text text-sm">{name}</span>
+                  <span className="label-text-alt font-mono">
+                    {minimums[i] > 0 ? `min ${minimums[i]}` : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="join">
+                    {WEIGHT_OPTIONS.map((o) => (
+                      <button
+                        key={o.v}
+                        className={`btn btn-xs join-item${
+                          weights[i] === o.v ? " btn-primary" : ""
+                        }`}
+                        onClick={() => {
+                          const next = [...weights];
+                          next[i] = o.v;
+                          setWeights(next);
+                        }}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={10}
+                    value={minimums[i]}
+                    onChange={(e) => {
+                      const next = [...minimums];
+                      next[i] = Number(e.target.value);
+                      setMinimums(next);
+                    }}
+                    className="range range-xs range-primary flex-1"
+                  />
+                </div>
+              </div>
             ))}
-          </select>
-          <div className="toggle-row">
-            <label className="toggle">
+
+            <div className="divider my-0" />
+
+            <label className="label cursor-pointer justify-start gap-3 py-1">
               <input
                 type="checkbox"
                 checked={useBaseStats}
                 onChange={(e) => setUseBaseStats(e.target.checked)}
+                className="checkbox checkbox-primary checkbox-sm"
               />
-              Utiliser les stats de base (mods actuels retirés)
+              <span className="label-text text-sm">
+                Stats de base (mods retirés)
+              </span>
             </label>
-            <label className="toggle">
+            <label className="label cursor-pointer justify-start gap-3 py-1">
               <input
                 type="checkbox"
                 checked={simulateMods}
                 onChange={(e) => setSimulateMods(e.target.checked)}
+                className="checkbox checkbox-primary checkbox-sm"
               />
-              Simuler 5 mods de stats (+10)
+              <span className="label-text text-sm">
+                Simuler 5 mods de stats (+10)
+              </span>
             </label>
+
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={run}
+              disabled={computing || classPieces.length === 0}
+            >
+              {computing ? "Calcul…" : "Calculer les assemblages"}
+            </button>
           </div>
         </div>
 
-        <div>
-          <h3 style={{ margin: "0 0 8px" }}>Priorités de stats</h3>
-          <div className="stat-grid">
-            {statNames.map((name, i) => (
-              <div className="stat-control" key={ARMOR_STAT_HASHES[i]}>
-                <label>{name}</label>
-                <select
-                  value={weights[i]}
-                  onChange={(e) => {
-                    const next = [...weights];
-                    next[i] = Number(e.target.value);
-                    setWeights(next);
-                  }}
-                >
-                  {WEIGHT_OPTIONS.map((o) => (
-                    <option key={o.v} value={o.v}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <label style={{ marginTop: 8 }}>Minimum</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={1000}
-                  step={5}
-                  value={minimums[i]}
-                  onChange={(e) => {
-                    const next = [...minimums];
-                    next[i] = Math.max(0, Number(e.target.value) || 0);
-                    setMinimums(next);
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <button
-            className="btn btn-primary"
-            onClick={run}
-            disabled={computing || classPieces.length === 0}
-          >
-            {computing ? "Calcul en cours…" : "Calculer les meilleurs builds"}
-          </button>
-        </div>
-      </div>
-
-      {classChars.length > 0 && (
-        <div className="field card" style={{ marginBottom: 16 }}>
-          <label htmlFor="targetChar">Appliquer sur le personnage</label>
-          <select
-            id="targetChar"
-            value={targetChar}
-            onChange={(e) => setTargetChar(e.target.value)}
-          >
-            {classChars.map((c) => (
-              <option key={c.characterId} value={c.characterId}>
-                {CLASS_NAMES[c.classType]} — ✦ {c.light}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {log.length > 0 && (
-        <div className="action-log">
-          {log.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-        </div>
-      )}
-
-      {computing && (
-        <div className="status">
-          <div className="spinner" />
-          <div>Énumération des combinaisons…</div>
-        </div>
-      )}
-
-      {builds !== null && !computing && (
-        <div>
-          {builds.length === 0 ? (
-            <div className="error-box">
-              Aucun build ne respecte ces minimums avec ton arsenal actuel.
-              Assouplis les contraintes, active la simulation de mods ou change
-              d&apos;exotique.
+        {/* ── Résultats ── */}
+        <div className="lg:col-span-3 min-w-0 flex flex-col gap-6">
+          {log.length > 0 && (
+            <div className="action-log">
+              {log.map((line, i) => (
+                <div key={i}>{line}</div>
+              ))}
             </div>
-          ) : (
-            builds.map((b, rank) => {
-              const total = b.totals.reduce((a, v) => a + v, 0);
-              const modParts = b.mods
-                .map((n, i) => (n > 0 ? `${n} × +10 ${statNames[i]}` : null))
-                .filter(Boolean);
-              return (
-                <div className="build-card" key={b.pieceIds.join(".")}>
-                  <div className="build-header">
-                    <span className="build-rank">Build #{rank + 1}</span>
-                    <span className="build-total">
-                      Total : {total} · Score pondéré : {b.score}
+          )}
+
+          {computing && (
+            <div className="flex flex-col items-center gap-3 py-12 opacity-70">
+              <span className="loading loading-spinner loading-lg text-primary" />
+              <div className="text-sm">Énumération des combinaisons…</div>
+            </div>
+          )}
+
+          {builds !== null && !computing && builds.length === 0 && (
+            <div role="alert" className="alert alert-warning text-sm">
+              <span>
+                Aucun assemblage ne respecte ces minimums avec ton arsenal.
+                Assouplis les contraintes, active la simulation de mods ou
+                change d&apos;exotique.
+              </span>
+            </div>
+          )}
+
+          {builds !== null && !computing && builds.length > 0 && (
+            <>
+              <div className="card bg-base-200 shadow">
+                <div className="card-body">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <h2 className="card-title">Assemblages retenus</h2>
+                    <span className="badge badge-ghost">
+                      {builds.length} résultats
                     </span>
                   </div>
-                  <div className="build-stats">
-                    {b.totals.map((v, i) => (
-                      <div
-                        className={`build-stat${
-                          minimums[i] > 0 && v < minimums[i] ? " under" : ""
-                        }`}
-                        key={ARMOR_STAT_HASHES[i]}
-                      >
-                        <div className="v">{v}</div>
-                        <div className="n">{statNames[i]}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {modParts.length > 0 && (
-                    <p className="mods-line">
-                      Mods suggérés : {modParts.join(" · ")}
-                    </p>
-                  )}
-                  <div className="item-actions">
-                    <button
-                      className="btn btn-sm btn-primary"
-                      disabled={busy || !targetChar}
-                      onClick={() => applyBuild(b, false)}
-                    >
-                      Équiper ce build
-                    </button>
-                    {simulateMods && b.mods.some((n) => n > 0) && (
-                      <button
-                        className="btn btn-sm"
-                        disabled={busy || !targetChar}
-                        onClick={() => applyBuild(b, true)}
-                      >
-                        Équiper + poser les mods
-                      </button>
-                    )}
-                  </div>
-                  <div className="build-pieces">
-                    {b.pieceIds.map((id) => {
-                      const p = pieceById.get(id);
-                      if (!p) return null;
-                      return (
-                        <div
-                          className={`piece${p.isExotic ? " exotic" : ""}`}
-                          key={id}
-                        >
-                          {p.icon ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={`${BUNGIE_ROOT}${p.icon}`} alt="" />
-                          ) : null}
-                          <div>
-                            <div>{p.name}</div>
-                            <div className="piece-slot">
-                              {ARMOR_BUCKETS[p.slot]}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="overflow-x-auto">
+                    <table className="table table-zebra table-sm min-w-[820px]">
+                      <thead>
+                        <tr>
+                          <th className="w-10">Rg</th>
+                          <th>Assemblage</th>
+                          {statNames.map((n, i) => (
+                            <th
+                              key={ARMOR_STAT_HASHES[i]}
+                              className="text-right w-14"
+                              title={n}
+                            >
+                              {n.slice(0, 3)}
+                            </th>
+                          ))}
+                          <th className="text-right w-16">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {builds.map((b, rank) => {
+                          const total = b.totals.reduce((a, v) => a + v, 0);
+                          const modParts = b.mods
+                            .map((n, i) =>
+                              n > 0 ? `${n}×+10 ${statNames[i]}` : null
+                            )
+                            .filter(Boolean);
+                          return (
+                            <tr
+                              key={b.pieceIds.join(".")}
+                              className={`cursor-pointer${
+                                rank === selBuild ? " bg-base-300" : ""
+                              }`}
+                              onClick={() => setSelBuild(rank)}
+                            >
+                              <th>{rank + 1}</th>
+                              <td>
+                                <div className="flex items-center gap-1">
+                                  {b.pieceIds.map((id) => {
+                                    const p = pieceById.get(id);
+                                    return p?.icon ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        key={id}
+                                        className={`w-7 h-7 rounded border border-base-300${
+                                          p.isExotic
+                                            ? " !border-[#ceae33]"
+                                            : ""
+                                        }`}
+                                        src={`${BUNGIE_ROOT}${p.icon}`}
+                                        alt={p.name}
+                                        title={p.name}
+                                      />
+                                    ) : null;
+                                  })}
+                                </div>
+                                {modParts.length > 0 && (
+                                  <div className="text-xs text-primary mt-1">
+                                    {modParts.join(" · ")}
+                                  </div>
+                                )}
+                              </td>
+                              {b.totals.map((v, i) => (
+                                <td
+                                  key={ARMOR_STAT_HASHES[i]}
+                                  className={`text-right font-mono${
+                                    minimums[i] > 0 && v < minimums[i]
+                                      ? " text-error"
+                                      : ""
+                                  }`}
+                                >
+                                  {v}
+                                </td>
+                              ))}
+                              <td className="text-right font-mono text-lg">
+                                {total}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              );
-            })
+              </div>
+
+              {sel && (
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+                  <div className="card bg-base-200 shadow xl:col-span-2 min-w-0">
+                    <div className="card-body">
+                      <h2 className="card-title text-base">
+                        Détail — assemblage #{Math.min(selBuild, builds.length - 1) + 1}
+                      </h2>
+                      <div className="overflow-x-auto">
+                        <table className="table table-sm">
+                          <thead>
+                            <tr>
+                              <th>Emplacement</th>
+                              <th>Pièce</th>
+                              <th className="text-right">Total pièce</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sel.pieceIds.map((id) => {
+                              const p = pieceById.get(id);
+                              if (!p) return null;
+                              const stats = useBaseStats
+                                ? p.baseStats
+                                : p.displayedStats;
+                              const t = stats.reduce((a, v) => a + v, 0);
+                              return (
+                                <tr key={id}>
+                                  <td className="opacity-60 text-xs uppercase">
+                                    {ARMOR_BUCKETS[p.slot]}
+                                  </td>
+                                  <td>
+                                    <div className="flex items-center gap-2">
+                                      {p.icon ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          className={`w-8 h-8 rounded border border-base-300${
+                                            p.isExotic
+                                              ? " !border-[#ceae33]"
+                                              : ""
+                                          }`}
+                                          src={`${BUNGIE_ROOT}${p.icon}`}
+                                          alt=""
+                                        />
+                                      ) : null}
+                                      <span>{p.name}</span>
+                                      {p.isExotic && (
+                                        <span className="badge badge-xs badge-primary">
+                                          exotique
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="text-right font-mono">{t}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="card-actions justify-end">
+                        {simulateMods && sel.mods.some((n) => n > 0) && (
+                          <button
+                            className="btn btn-outline btn-sm"
+                            disabled={busy || !targetChar}
+                            onClick={() => applyBuild(sel, true)}
+                          >
+                            Équiper + poser les mods
+                          </button>
+                        )}
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={busy || !targetChar}
+                          onClick={() => applyBuild(sel, false)}
+                        >
+                          Équiper cet assemblage
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="card bg-base-200 shadow">
+                    <div className="card-body gap-3">
+                      <h2 className="card-title text-base">Stats finales</h2>
+                      {sel.totals.map((v, i) => (
+                        <div key={ARMOR_STAT_HASHES[i]}>
+                          <div className="flex items-baseline justify-between text-xs">
+                            <span>{statNames[i]}</span>
+                            <span className="font-mono opacity-60">
+                              {v}
+                              {sel.mods[i] > 0
+                                ? ` (dont +${sel.mods[i] * 10} mods)`
+                                : ""}
+                            </span>
+                          </div>
+                          <progress
+                            className={`progress h-1.5 mt-1 ${
+                              minimums[i] > 0 && v < minimums[i]
+                                ? "progress-error"
+                                : "progress-primary"
+                            }`}
+                            value={v}
+                            max={STAT_CAP}
+                          />
+                        </div>
+                      ))}
+                      <p className="text-xs opacity-50">
+                        Mode :{" "}
+                        {useBaseStats ? "stats de base" : "stats affichées"}
+                        {simulateMods ? " · mods simulés" : ""}. Bonus de set et
+                        mods d&apos;accord non simulés.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
-          <p className="note">
-            Mode :{" "}
-            {useBaseStats
-              ? "stats de base (mods actuels retirés)"
-              : "stats affichées (mods actuels compris)"}
-            {simulateMods ? " · simulation de 5 mods de stats (+10) activée" : ""}
-            . Les bonus de set et mods d&apos;accord ne sont pas encore
-            simulés.
-          </p>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import {
   BUNGIE_ROOT,
+  CLASS_NAMES,
   ITEM_TYPE_WEAPON,
   SOCKET_CATEGORY_WEAPON_MODS,
   SOCKET_CATEGORY_WEAPON_PERKS,
@@ -18,8 +19,12 @@ import {
   transferItem,
   type ItemLocation,
 } from "@/lib/d2-actions";
-import { CLASS_NAMES } from "@/lib/destiny-constants";
-import type { Character, Defs, ProfileItem, ProfileResponse } from "@/lib/types";
+import type {
+  Character,
+  Defs,
+  ProfileItem,
+  ProfileResponse,
+} from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
 
@@ -122,7 +127,6 @@ export default function WeaponsPage() {
       const damageHash = inst?.damageTypeHash ?? def.defaultDamageTypeHash ?? 0;
       const damageDef = d.damageTypes[damageHash];
 
-      // Perks et mods depuis les sockets équipés
       const socketStates = socketsData[item.itemInstanceId]?.sockets ?? [];
       const categories = def.sockets?.socketCategories ?? [];
       const collect = (categoryHash: number): Plug[] => {
@@ -177,8 +181,15 @@ export default function WeaponsPage() {
     );
   }, [profile]);
 
+  const charClassById = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of characters) m.set(c.characterId, c.classType);
+    return m;
+  }, [characters]);
+
   const locations = useMemo(
-    () => (profile ? buildLocationMap(profile) : new Map<string, ItemLocation>()),
+    () =>
+      profile ? buildLocationMap(profile) : new Map<string, ItemLocation>(),
     [profile]
   );
 
@@ -208,10 +219,16 @@ export default function WeaponsPage() {
         log: pushLog,
       });
       if (ok) {
-        const res = await equipItems({ itemIds: [w.id], characterId: selectedChar });
+        const res = await equipItems({
+          itemIds: [w.id],
+          characterId: selectedChar,
+        });
         const status = res.results[0]?.equipStatus;
         if (status === 1) pushLog(`✅ ${w.name} équipée.`);
-        else pushLog(`⚠️ ${w.name} : non équipée (code ${status} — es-tu en orbite ?)`);
+        else
+          pushLog(
+            `⚠️ ${w.name} : non équipée (code ${status} — es-tu en orbite ?)`
+          );
       }
       await refresh();
     } catch (e) {
@@ -246,6 +263,20 @@ export default function WeaponsPage() {
     }
   }
 
+  function holderBadge(w: WeaponVM) {
+    const loc = locations.get(w.id);
+    if (!loc || loc.characterId === null) {
+      return <span className="badge badge-sm badge-ghost">Coffre</span>;
+    }
+    const cls = CLASS_NAMES[charClassById.get(loc.characterId) ?? -1] ?? "Perso";
+    if (loc.equipped) {
+      return (
+        <span className="badge badge-sm badge-primary">Équipée · {cls}</span>
+      );
+    }
+    return <span className="badge badge-sm badge-outline">{cls}</span>;
+  }
+
   const damageOptions = useMemo(() => {
     const m = new Map<number, string>();
     for (const w of weapons) {
@@ -261,7 +292,8 @@ export default function WeaponsPage() {
       if (damageFilter !== "all" && w.damageHash !== Number(damageFilter))
         return false;
       if (tierFilter === "exotic" && w.tierType !== TIER_EXOTIC) return false;
-      if (tierFilter === "legendary" && w.tierType === TIER_EXOTIC) return false;
+      if (tierFilter === "legendary" && w.tierType === TIER_EXOTIC)
+        return false;
       if (!f) return true;
       return (
         w.name.toLowerCase().includes(f) ||
@@ -273,17 +305,17 @@ export default function WeaponsPage() {
 
   if (phase === "loading") {
     return (
-      <div className="status">
-        <div className="spinner" />
-        <div>{statusMsg}</div>
+      <div className="flex flex-col items-center gap-4 py-16 opacity-70">
+        <span className="loading loading-spinner loading-lg text-primary" />
+        <div className="text-sm">{statusMsg}</div>
       </div>
     );
   }
 
   if (phase === "unauth") {
     return (
-      <div className="status">
-        <p>Connecte-toi pour voir ton arsenal.</p>
+      <div className="flex flex-col items-center gap-4 py-16">
+        <p className="opacity-70">Connecte-toi pour voir ton arsenal.</p>
         <a className="btn btn-primary" href="/api/auth/login">
           Se connecter avec Bungie.net
         </a>
@@ -292,18 +324,26 @@ export default function WeaponsPage() {
   }
 
   if (phase === "error") {
-    return <div className="error-box">{error}</div>;
+    return (
+      <div role="alert" className="alert alert-error">
+        <span>{error}</span>
+      </div>
+    );
   }
 
-  return (
-    <div>
-      <h1>Armes</h1>
-      <p style={{ color: "var(--text-dim)" }}>
-        {weapons.length} armes dans ton arsenal (coffre + personnages +
-        équipé). La recherche couvre aussi les noms de perks.
-      </p>
+  const activeClass =
+    CLASS_NAMES[charClassById.get(selectedChar) ?? -1] ?? "ton personnage";
 
-      <div className="char-row">
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <h1 className="text-2xl font-semibold">Arsenal</h1>
+        <span className="badge badge-ghost">
+          {shown.length}/{weapons.length} armes
+        </span>
+      </div>
+
+      <div className="flex gap-2.5 flex-wrap">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -325,6 +365,13 @@ export default function WeaponsPage() {
         ))}
       </div>
 
+      <div role="alert" className="alert alert-info py-2 text-sm">
+        <span>
+          Les équipements et transferts visent <strong>{activeClass}</strong>.
+          La recherche couvre aussi les noms de perks.
+        </span>
+      </div>
+
       {log.length > 0 && (
         <div className="action-log">
           {log.map((line, i) => (
@@ -333,21 +380,28 @@ export default function WeaponsPage() {
         </div>
       )}
 
-      <div className="tabs">
-        <select
-          className="filter-select"
-          value={slotFilter}
-          onChange={(e) => setSlotFilter(e.target.value)}
-        >
-          <option value="all">Tous les emplacements</option>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div role="tablist" className="tabs tabs-boxed tabs-sm">
+          <a
+            role="tab"
+            className={`tab${slotFilter === "all" ? " tab-active" : ""}`}
+            onClick={() => setSlotFilter("all")}
+          >
+            Tous
+          </a>
           {WEAPON_SLOT_ORDER.map((s) => (
-            <option key={s} value={s}>
+            <a
+              key={s}
+              role="tab"
+              className={`tab${slotFilter === String(s) ? " tab-active" : ""}`}
+              onClick={() => setSlotFilter(String(s))}
+            >
               {WEAPON_BUCKETS[s]}
-            </option>
+            </a>
           ))}
-        </select>
+        </div>
         <select
-          className="filter-select"
+          className="select select-bordered select-sm"
           value={damageFilter}
           onChange={(e) => setDamageFilter(e.target.value)}
         >
@@ -359,7 +413,7 @@ export default function WeaponsPage() {
           ))}
         </select>
         <select
-          className="filter-select"
+          className="select select-bordered select-sm"
           value={tierFilter}
           onChange={(e) => setTierFilter(e.target.value)}
         >
@@ -368,95 +422,132 @@ export default function WeaponsPage() {
           <option value="legendary">Non exotiques</option>
         </select>
         <input
-          className="search-input"
+          className="input input-bordered input-sm w-64"
           placeholder="Filtrer par nom, type, perk…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
       </div>
 
-      {shown.length === 0 ? (
-        <div className="status">Aucune arme ne correspond.</div>
-      ) : (
-        <div className="grid grid-2">
-          {shown.map((w) => (
-            <div className="item-card" key={w.id}>
-              {w.icon ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className={`item-icon${w.tierType === TIER_EXOTIC ? " exotic" : ""}`}
-                  src={`${BUNGIE_ROOT}${w.icon}`}
-                  alt=""
-                />
-              ) : (
-                <div className="item-icon" />
-              )}
-              <div className="item-body">
-                <p className="item-name">{w.name}</p>
-                <div className="item-type">
-                  {w.typeName} · {WEAPON_BUCKETS[w.slot]}
-                  {w.damageName && (
-                    <>
-                      {" · "}
-                      {w.damageIcon && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          className="damage-icon"
-                          src={`${BUNGIE_ROOT}${w.damageIcon}`}
-                          alt=""
-                        />
-                      )}
-                      {w.damageName}
-                    </>
-                  )}
-                  {w.power > 0 && <> · ✦ {w.power}</>}
-                </div>
-                {w.perks.length > 0 && (
-                  <div className="plug-row">
-                    {w.perks.map((p, i) => (
-                      <span className="plug" key={`p${i}`} title={p.name}>
-                        {p.icon ? (
+      <div className="card bg-base-200 shadow">
+        <div className="card-body p-2">
+          <div className="overflow-x-auto">
+            <table className="table table-zebra table-pin-rows table-sm min-w-[1000px]">
+              <thead>
+                <tr>
+                  <th>Arme</th>
+                  <th>Type</th>
+                  <th>Élément</th>
+                  <th className="text-right">Puissance</th>
+                  <th>Perks</th>
+                  <th>Mods</th>
+                  <th>Détenue par</th>
+                  <th className="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center opacity-60 py-8">
+                      Aucune arme ne correspond.
+                    </td>
+                  </tr>
+                ) : (
+                  shown.map((w) => (
+                    <tr key={w.id}>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          {w.icon ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              className={`item-icon !w-10 !h-10${
+                                w.tierType === TIER_EXOTIC ? " exotic" : ""
+                              }`}
+                              src={`${BUNGIE_ROOT}${w.icon}`}
+                              alt=""
+                            />
+                          ) : (
+                            <div className="item-icon !w-10 !h-10" />
+                          )}
+                          <span className="font-medium whitespace-nowrap">
+                            {w.name}
+                          </span>
+                          {w.tierType === TIER_EXOTIC && (
+                            <span className="badge badge-xs badge-primary">
+                              exotique
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-xs opacity-60 uppercase whitespace-nowrap">
+                        {w.typeName}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        {w.damageIcon && (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={`${BUNGIE_ROOT}${p.icon}`} alt={p.name} />
-                        ) : null}
-                      </span>
-                    ))}
-                  </div>
+                          <img
+                            className="damage-icon"
+                            src={`${BUNGIE_ROOT}${w.damageIcon}`}
+                            alt=""
+                          />
+                        )}
+                        <span className="text-xs">{w.damageName}</span>
+                      </td>
+                      <td className="text-right font-mono">
+                        {w.power > 0 ? w.power : "—"}
+                      </td>
+                      <td>
+                        <div className="flex gap-1 flex-wrap max-w-52">
+                          {w.perks.map((p, i) => (
+                            <span className="plug" key={i} title={p.name}>
+                              {p.icon ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={`${BUNGIE_ROOT}${p.icon}`}
+                                  alt={p.name}
+                                />
+                              ) : null}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="text-xs opacity-60 max-w-40">
+                        {w.mods.map((m) => m.name).join(" · ")}
+                      </td>
+                      <td>{holderBadge(w)}</td>
+                      <td className="text-right whitespace-nowrap">
+                        <div className="flex gap-1 justify-end">
+                          <button
+                            className="btn btn-xs btn-primary"
+                            disabled={busy || !selectedChar}
+                            onClick={() => handleEquip(w)}
+                          >
+                            Équiper
+                          </button>
+                          {locations.get(w.id)?.characterId !== null &&
+                            !locations.get(w.id)?.equipped && (
+                              <button
+                                className="btn btn-xs btn-outline"
+                                disabled={busy}
+                                onClick={() => handleVault(w)}
+                              >
+                                Coffre
+                              </button>
+                            )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
-                {w.mods.length > 0 && (
-                  <div className="plug-labels">
-                    Mods : {w.mods.map((m) => m.name).join(" · ")}
-                  </div>
-                )}
-                <div className="item-actions">
-                  <button
-                    className="btn btn-sm btn-primary"
-                    disabled={busy || !selectedChar}
-                    onClick={() => handleEquip(w)}
-                  >
-                    Équiper
-                  </button>
-                  {locations.get(w.id)?.characterId !== null &&
-                    !locations.get(w.id)?.equipped && (
-                      <button
-                        className="btn btn-sm"
-                        disabled={busy}
-                        onClick={() => handleVault(w)}
-                      >
-                        → Coffre
-                      </button>
-                    )}
-                </div>
-              </div>
-            </div>
-          ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      )}
+      </div>
 
-      <p className="note">
-        {shown.length} arme{shown.length > 1 ? "s" : ""} affichée
-        {shown.length > 1 ? "s" : ""}. Survole une icône de perk pour voir son
-        nom.
+      <p className="text-xs opacity-50">
+        Survole une icône de perk pour voir son nom. Les objets équipés sur un
+        autre personnage doivent être déséquipés en jeu avant transfert.
       </p>
     </div>
   );

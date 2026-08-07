@@ -52,14 +52,33 @@ interface RecordGroup {
   records: RecordVM[];
 }
 
-function formatExpiry(iso: string): string {
+function expiryInfo(iso?: string): { label: string; cls: string } | null {
+  if (!iso) return null;
   const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return "Expirée";
+  if (ms <= 0) return { label: "Expirée", cls: "badge-error" };
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
-  if (h >= 48) return `Expire dans ${Math.floor(h / 24)} j`;
-  if (h >= 1) return `Expire dans ${h} h ${m.toString().padStart(2, "0")}`;
-  return `Expire dans ${m} min`;
+  const label =
+    h >= 48
+      ? `${Math.floor(h / 24)} j ${h % 24} h`
+      : h >= 1
+        ? `${h} h ${m.toString().padStart(2, "0")}`
+        : `${m} min`;
+  const cls = h < 24 ? "badge-error" : h < 72 ? "badge-warning" : "badge-ghost";
+  return { label, cls };
+}
+
+function objectivePct(o: ObjectiveProgress, defs: Defs | null): number {
+  const cv =
+    o.completionValue || defs?.objectives[o.objectiveHash]?.completionValue || 0;
+  const progress = o.progress ?? (o.complete ? cv : 0);
+  return cv > 0 ? Math.min(1, progress / cv) : o.complete ? 1 : 0;
+}
+
+function overallPct(objectives: ObjectiveProgress[], defs: Defs | null): number {
+  if (objectives.length === 0) return 0;
+  const sum = objectives.reduce((a, o) => a + objectivePct(o, defs), 0);
+  return Math.round((sum / objectives.length) * 100);
 }
 
 /** Récupère récursivement les hashs d'archives d'un nœud de présentation. */
@@ -89,22 +108,28 @@ function ObjectiveBar({
   const objDef = defs?.objectives[objective.objectiveHash];
   const cv = objective.completionValue || objDef?.completionValue || 0;
   const progress = objective.progress ?? (objective.complete ? cv : 0);
-  const pct =
-    cv > 0 ? Math.min(100, (progress / cv) * 100) : objective.complete ? 100 : 0;
+  const pct = objectivePct(objective, defs) * 100;
   return (
-    <div className="objective">
-      <div className="objective-label">
-        <span>{objDef?.progressDescription || "Progression"}</span>
-        <span className={objective.complete ? "done" : ""}>
+    <div>
+      <div className="flex items-baseline justify-between gap-2 text-xs opacity-80">
+        <span className="truncate">
+          {objDef?.progressDescription || "Progression"}
+        </span>
+        <span
+          className={
+            objective.complete ? "text-success" : "font-mono opacity-70"
+          }
+        >
           {objective.complete ? "✓" : cv > 1 ? `${progress} / ${cv}` : ""}
         </span>
       </div>
-      <div className="progress-track">
-        <div
-          className={`progress-fill${objective.complete ? " done" : ""}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      <progress
+        className={`progress h-1 mt-1 ${
+          objective.complete ? "progress-success" : "progress-primary"
+        }`}
+        value={pct}
+        max={100}
+      />
     </div>
   );
 }
@@ -219,6 +244,7 @@ export default function QuestsPage() {
     return pursuits.filter((p) => {
       if (pursuitTab === "quests" && !p.isQuest) return false;
       if (pursuitTab === "bounties" && !p.isBounty) return false;
+      if (hideCompleted && p.complete) return false;
       if (!f) return true;
       return (
         p.name.toLowerCase().includes(f) ||
@@ -226,7 +252,7 @@ export default function QuestsPage() {
         p.description.toLowerCase().includes(f)
       );
     });
-  }, [pursuits, pursuitTab, filter]);
+  }, [pursuits, pursuitTab, filter, hideCompleted]);
 
   // ---------- Archives (défis saisonniers, rangs) ----------
   function getRecordComponent(hash: number): RecordComponent | undefined {
@@ -335,26 +361,80 @@ export default function QuestsPage() {
     });
   }
 
-  function RecordCard({ record }: { record: RecordVM }) {
+  function QuestCard({
+    icon,
+    title,
+    badge,
+    typeLine,
+    description,
+    objectives,
+    complete,
+  }: {
+    icon?: string;
+    title: string;
+    badge?: { label: string; cls: string } | null;
+    typeLine?: string;
+    description?: string;
+    objectives: ObjectiveProgress[];
+    complete: boolean;
+  }) {
+    const pct = complete ? 100 : overallPct(objectives, defs);
     return (
-      <div className={`item-card${record.complete ? " record-done" : ""}`}>
-        {record.icon ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="item-icon" src={`${BUNGIE_ROOT}${record.icon}`} alt="" />
-        ) : (
-          <div className="item-icon" />
-        )}
-        <div className="item-body">
-          <p className="item-name">
-            {record.name}
-            {record.complete && <span className="done-badge"> ✓</span>}
-          </p>
-          {record.description && (
-            <p className="item-desc">{record.description}</p>
-          )}
-          {record.objectives.map((o) => (
-            <ObjectiveBar key={o.objectiveHash} objective={o} defs={defs} />
-          ))}
+      <div
+        className={`card card-side bg-base-200 shadow${complete ? " opacity-60" : ""}`}
+      >
+        <div className="card-body p-4">
+          <div className="flex items-start gap-4">
+            {icon ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img className="item-icon" src={`${BUNGIE_ROOT}${icon}`} alt="" />
+            ) : (
+              <div className="item-icon" />
+            )}
+            <div className="min-w-0 flex-1">
+              <h2 className="card-title text-base gap-2 flex-wrap">
+                <span className="truncate">{title}</span>
+                {complete && (
+                  <span className="badge badge-sm badge-success">terminé</span>
+                )}
+                {badge && !complete && (
+                  <span className={`badge badge-sm ${badge.cls}`}>
+                    {badge.label}
+                  </span>
+                )}
+              </h2>
+              {typeLine && (
+                <div className="text-xs opacity-50 mt-0.5">{typeLine}</div>
+              )}
+              {description && (
+                <p className="text-sm opacity-70 mt-1 line-clamp-2">
+                  {description}
+                </p>
+              )}
+              <div className="flex flex-col gap-2 mt-3">
+                {objectives.map((o) => (
+                  <ObjectiveBar key={o.objectiveHash} objective={o} defs={defs} />
+                ))}
+              </div>
+            </div>
+            {objectives.length > 0 && (
+              <div
+                className={`radial-progress flex-none text-xs font-mono ${
+                  complete ? "text-success" : "text-primary"
+                }`}
+                style={
+                  {
+                    "--value": pct,
+                    "--size": "3.5rem",
+                    "--thickness": "3px",
+                  } as React.CSSProperties
+                }
+                role="progressbar"
+              >
+                {pct}%
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -362,17 +442,17 @@ export default function QuestsPage() {
 
   if (phase === "loading") {
     return (
-      <div className="status">
-        <div className="spinner" />
-        <div>{statusMsg}</div>
+      <div className="flex flex-col items-center gap-4 py-16 opacity-70">
+        <span className="loading loading-spinner loading-lg text-primary" />
+        <div className="text-sm">{statusMsg}</div>
       </div>
     );
   }
 
   if (phase === "unauth") {
     return (
-      <div className="status">
-        <p>Connecte-toi pour voir tes quêtes.</p>
+      <div className="flex flex-col items-center gap-4 py-16">
+        <p className="opacity-70">Connecte-toi pour voir tes quêtes.</p>
         <a className="btn btn-primary" href="/api/auth/login">
           Se connecter avec Bungie.net
         </a>
@@ -381,14 +461,42 @@ export default function QuestsPage() {
   }
 
   if (phase === "error") {
-    return <div className="error-box">{error}</div>;
+    return (
+      <div role="alert" className="alert alert-error">
+        <span>{error}</span>
+      </div>
+    );
   }
 
-  return (
-    <div>
-      <h1>Quêtes &amp; progression</h1>
+  const sectionCounts =
+    section === "pursuits"
+      ? {
+          total: pursuits.length,
+          done: pursuits.filter((p) => p.complete).length,
+        }
+      : section === "seasonal"
+        ? {
+            total: seasonalGroups.reduce((a, g) => a + g.records.length, 0),
+            done: seasonalGroups.reduce(
+              (a, g) => a + g.records.filter((r) => r.complete).length,
+              0
+            ),
+          }
+        : {
+            total: rankRecords.length,
+            done: rankRecords.filter((r) => r.complete).length,
+          };
 
-      <div className="char-row">
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h1 className="text-2xl font-semibold">Quêtes &amp; progression</h1>
+        <span className="badge badge-ghost">
+          {sectionCounts.done}/{sectionCounts.total} terminés
+        </span>
+      </div>
+
+      <div className="flex gap-2.5 flex-wrap">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -410,167 +518,179 @@ export default function QuestsPage() {
         ))}
       </div>
 
-      <div className="tabs">
-        {(
-          [
-            ["pursuits", "Poursuites"],
-            ["seasonal", "Défis saisonniers"],
-            ["ranks", "Rangs de Gardien"],
-          ] as [Section, string][]
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            className={`tab${section === value ? " active" : ""}`}
-            onClick={() => setSection(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="tabs">
-        {section === "pursuits" &&
-          (
-            [
-              ["all", "Tout"],
-              ["quests", "Quêtes"],
-              ["bounties", "Primes"],
-            ] as [PursuitTab, string][]
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              className={`tab${pursuitTab === value ? " active" : ""}`}
-              onClick={() => setPursuitTab(value)}
-            >
-              {label}
-            </button>
-          ))}
-        {section === "ranks" && (
-          <select
-            className="filter-select"
-            value={selectedRank ?? ""}
-            onChange={(e) => setSelectedRank(Number(e.target.value))}
-          >
-            {ranks.map((r) => (
-              <option key={r.hash} value={r.rankNumber}>
-                Rang {r.rankNumber} — {r.displayProperties?.name}
-                {r.rankNumber === currentRank ? " (actuel)" : ""}
-              </option>
-            ))}
-          </select>
-        )}
-        {section !== "pursuits" && (
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={hideCompleted}
-              onChange={(e) => setHideCompleted(e.target.checked)}
-            />
-            Masquer les terminés
-          </label>
-        )}
-        <input
-          className="search-input"
-          placeholder="Filtrer par nom…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
-      </div>
-
-      {section === "pursuits" &&
-        (shownPursuits.length === 0 ? (
-          <div className="status">Aucune poursuite ne correspond.</div>
-        ) : (
-          <div className="grid grid-2">
-            {shownPursuits.map((p) => (
-              <div className="item-card" key={p.key}>
-                {p.icon ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    className="item-icon"
-                    src={`${BUNGIE_ROOT}${p.icon}`}
-                    alt=""
-                  />
-                ) : (
-                  <div className="item-icon" />
-                )}
-                <div className="item-body">
-                  <p className="item-name">{p.name}</p>
-                  <div className="item-type">
-                    {p.typeName}
-                    {p.expirationDate && !p.complete && (
-                      <>
-                        {" · "}
-                        <span className="expiry">
-                          {formatExpiry(p.expirationDate)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  {p.description && (
-                    <p className="item-desc">{p.description}</p>
-                  )}
-                  {p.objectives.map((o) => (
-                    <ObjectiveBar
-                      key={o.objectiveHash}
-                      objective={o}
-                      defs={defs}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-
-      {section === "seasonal" &&
-        (seasonalGroups.length === 0 ? (
-          <div className="status">
-            Impossible de trouver les défis de la saison en cours dans le
-            manifest.
-          </div>
-        ) : (
-          seasonalGroups.map((g) => {
-            const records = filterRecords(g.records);
-            if (records.length === 0) return null;
-            const done = g.records.filter((r) => r.complete).length;
-            return (
-              <div key={g.name} className="record-group">
-                <h3>
-                  {g.name}{" "}
-                  <span className="group-count">
-                    {done}/{g.records.length}
-                  </span>
-                </h3>
-                <div className="grid grid-2">
-                  {records.map((r) => (
-                    <RecordCard key={r.hash} record={r} />
-                  ))}
-                </div>
-              </div>
-            );
-          })
-        ))}
-
-      {section === "ranks" &&
-        (rankRecords.length === 0 ? (
-          <div className="status">
-            Aucun objectif trouvé pour ce rang (ou données de rang
-            indisponibles).
-          </div>
-        ) : (
-          <div>
-            <p style={{ color: "var(--text-dim)" }}>
-              Ton rang actuel : <strong>{currentRank}</strong>. Objectifs du
-              rang sélectionné ci-dessous.
-            </p>
-            <div className="grid grid-2">
-              {filterRecords(rankRecords).map((r) => (
-                <RecordCard key={r.hash} record={r} />
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        {/* ── Panneau latéral ── */}
+        <div className="card bg-base-200 shadow">
+          <div className="card-body gap-4 p-5">
+            <h2 className="card-title text-base">Affichage</h2>
+            <div role="tablist" className="tabs tabs-boxed tabs-sm">
+              {(
+                [
+                  ["pursuits", "Poursuites"],
+                  ["seasonal", "Défis"],
+                  ["ranks", "Rangs"],
+                ] as [Section, string][]
+              ).map(([value, label]) => (
+                <a
+                  key={value}
+                  role="tab"
+                  className={`tab${section === value ? " tab-active" : ""}`}
+                  onClick={() => setSection(value)}
+                >
+                  {label}
+                </a>
               ))}
             </div>
+
+            {section === "pursuits" && (
+              <div className="join">
+                {(
+                  [
+                    ["all", "Tout"],
+                    ["quests", "Quêtes"],
+                    ["bounties", "Primes"],
+                  ] as [PursuitTab, string][]
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={`btn btn-xs join-item${
+                      pursuitTab === value ? " btn-primary" : ""
+                    }`}
+                    onClick={() => setPursuitTab(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {section === "ranks" && (
+              <select
+                className="select select-bordered select-sm w-full"
+                value={selectedRank ?? ""}
+                onChange={(e) => setSelectedRank(Number(e.target.value))}
+              >
+                {ranks.map((r) => (
+                  <option key={r.hash} value={r.rankNumber}>
+                    Rang {r.rankNumber} — {r.displayProperties?.name}
+                    {r.rankNumber === currentRank ? " (actuel)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <div className="divider my-0" />
+
+            <label className="label cursor-pointer justify-start gap-3 py-1">
+              <input
+                type="checkbox"
+                checked={hideCompleted}
+                onChange={(e) => setHideCompleted(e.target.checked)}
+                className="toggle toggle-primary toggle-sm"
+              />
+              <span className="label-text text-sm">Masquer les terminés</span>
+            </label>
+
+            <input
+              className="input input-bordered input-sm w-full"
+              placeholder="Filtrer par nom…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+
+            <div className="stats stats-vertical shadow bg-base-300">
+              <div className="stat py-2">
+                <div className="stat-title text-xs">Terminés</div>
+                <div className="stat-value text-2xl text-success">
+                  {sectionCounts.done}
+                </div>
+              </div>
+              <div className="stat py-2">
+                <div className="stat-title text-xs">
+                  {section === "ranks" ? "Rang actuel" : "Total"}
+                </div>
+                <div className="stat-value text-2xl">
+                  {section === "ranks" ? currentRank : sectionCounts.total}
+                </div>
+              </div>
+            </div>
           </div>
-        ))}
+        </div>
+
+        {/* ── Contenu ── */}
+        <div className="lg:col-span-3 min-w-0 flex flex-col gap-4">
+          {section === "pursuits" &&
+            (shownPursuits.length === 0 ? (
+              <div className="opacity-60 py-8 text-center">
+                Aucune poursuite ne correspond.
+              </div>
+            ) : (
+              shownPursuits.map((p) => (
+                <QuestCard
+                  key={p.key}
+                  icon={p.icon}
+                  title={p.name}
+                  badge={p.complete ? null : expiryInfo(p.expirationDate)}
+                  typeLine={p.typeName}
+                  description={p.description}
+                  objectives={p.objectives}
+                  complete={p.complete}
+                />
+              ))
+            ))}
+
+          {section === "seasonal" &&
+            (seasonalGroups.length === 0 ? (
+              <div className="opacity-60 py-8 text-center">
+                Impossible de trouver les défis de la saison en cours dans le
+                manifest.
+              </div>
+            ) : (
+              seasonalGroups.map((g) => {
+                const records = filterRecords(g.records);
+                if (records.length === 0) return null;
+                const done = g.records.filter((r) => r.complete).length;
+                return (
+                  <div key={g.name} className="flex flex-col gap-3">
+                    <div className="divider divider-start text-sm uppercase tracking-wider opacity-70">
+                      <span className="whitespace-nowrap">
+                        {g.name} · {done}/{g.records.length}
+                      </span>
+                    </div>
+                    {records.map((r) => (
+                      <QuestCard
+                        key={r.hash}
+                        icon={r.icon}
+                        title={r.name}
+                        description={r.description}
+                        objectives={r.objectives}
+                        complete={r.complete}
+                      />
+                    ))}
+                  </div>
+                );
+              })
+            ))}
+
+          {section === "ranks" &&
+            (rankRecords.length === 0 ? (
+              <div className="opacity-60 py-8 text-center">
+                Aucun objectif trouvé pour ce rang.
+              </div>
+            ) : (
+              filterRecords(rankRecords).map((r) => (
+                <QuestCard
+                  key={r.hash}
+                  icon={r.icon}
+                  title={r.name}
+                  description={r.description}
+                  objectives={r.objectives}
+                  complete={r.complete}
+                />
+              ))
+            ))}
+        </div>
+      </div>
     </div>
   );
 }
