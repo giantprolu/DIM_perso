@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/quests", label: "Quêtes" },
   { href: "/armes", label: "Armes" },
   { href: "/optimizer", label: "Optimiseur" },
+  { href: "/loadouts", label: "Loadouts" },
 ];
 
 export default function Nav() {

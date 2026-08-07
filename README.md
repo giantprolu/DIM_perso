@@ -15,7 +15,14 @@ l'essentiel :
   objet de classe selon tes priorités de stats : exotique verrouillé,
   minimums par stat, calcul sur **stats de base** (mods retirés) et
   **simulation de 5 mods de stats (+10)**. Un guide intégré explique chaque
-  filtre.
+  filtre. Chaque build peut être **équipé en un clic** (transferts compris),
+  avec pose automatique des mods suggérés.
+- **Loadouts** — enregistre un personnage complet (armes, armures, mods,
+  sous-classe avec aspects et fragments) puis réapplique-le : rapatriement
+  des objets depuis le coffre ou les autres personnages, équipement,
+  restauration des mods via `InsertSocketPlugFree`.
+- **Actions en jeu** — équiper une arme ou l'envoyer au coffre directement
+  depuis la page Armes.
 
 Stack : **Next.js 15 (App Router) + TypeScript**, zéro dépendance superflue.
 Le manifest Destiny 2 est mis en cache dans IndexedDB côté navigateur
@@ -31,8 +38,12 @@ Le manifest Destiny 2 est mis en cache dans IndexedDB côté navigateur
      client secret côté serveur).
    - **Redirect URL** : `https://TON-APP.vercel.app/api/auth/callback`
      (remplace par ton URL Vercel réelle — doit correspondre exactement).
-   - **Scope** : coche au minimum la lecture de tes données Destiny
-     (« Read your Destiny 2 information (Vault, Inventory, Vendors)… »).
+   - **Scope** : coche la lecture de tes données Destiny
+     (« Read your Destiny 2 information (Vault, Inventory, Vendors)… »)
+     **et** « Move or equip Destiny gear and other items » (indispensable
+     pour équiper, transférer et poser des mods depuis le site). Si tu
+     ajoutes ce scope après coup, déconnecte-toi puis reconnecte-toi sur le
+     site pour re-consentir.
    - **Origin Header** : `https://TON-APP.vercel.app`.
 3. Note les trois valeurs : **API Key**, **OAuth client_id**,
    **OAuth client_secret**.
@@ -101,6 +112,18 @@ Choix notables :
 - Le moteur pré-trie chaque emplacement par score pondéré et tronque les
   candidats pour rester instantané, en conservant toujours l'exotique
   verrouillé.
+
+## Actions en jeu : bon à savoir
+
+- L'équipement échoue dans certaines activités → mets-toi **en orbite** ou
+  dans un espace social.
+- Les objets **au maître des postes** ne sont pas transférables par l'API :
+  ils sont signalés et ignorés.
+- Un objet **équipé sur un autre personnage** ne peut pas être déplacé
+  directement : équipe autre chose dessus d'abord.
+- La pose de mods utilise `InsertSocketPlugFree` (plugs sans coût) ; si
+  l'énergie de la pièce est insuffisante, Bungie refuse et l'erreur
+  s'affiche dans le journal.
 
 ## Limites connues & roadmap
 

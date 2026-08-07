@@ -16,7 +16,16 @@ import {
   type Build,
   type EnginePiece,
 } from "@/lib/optimizer-engine";
+import {
+  buildLocationMap,
+  equipItems,
+  findStatModSocket,
+  insertPlug,
+  moveToCharacter,
+  sleep,
+} from "@/lib/d2-actions";
 import type {
+  Character,
   Defs,
   ProfileItem,
   ProfileResponse,
@@ -81,6 +90,10 @@ export default function OptimizerPage() {
   const [simulateMods, setSimulateMods] = useState(true);
   const [builds, setBuilds] = useState<Build[] | null>(null);
   const [computing, setComputing] = useState(false);
+  const [profile, setProfile] = useState<ProfileResponse | null>(null);
+  const [targetChar, setTargetChar] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +111,7 @@ export default function OptimizerPage() {
         const data = (await res.json()) as ProfileResponse & { error?: string };
         if (!res.ok) throw new Error(data.error ?? "Erreur profil");
         if (cancelled) return;
+        setProfile(data);
 
         // Rassembler tous les items : coffre + inventaires + équipé
         const allItems: ProfileItem[] = [
@@ -189,6 +203,113 @@ export default function OptimizerPage() {
     for (const p of pieces) m.set(p.id, p);
     return m;
   }, [pieces]);
+
+  const characters: Character[] = useMemo(() => {
+    const chars = Object.values(profile?.characters?.data ?? {});
+    return chars.sort(
+      (a, b) =>
+        new Date(b.dateLastPlayed).getTime() -
+        new Date(a.dateLastPlayed).getTime()
+    );
+  }, [profile]);
+
+  const classChars = useMemo(
+    () => characters.filter((c) => c.classType === selectedClass),
+    [characters, selectedClass]
+  );
+
+  useEffect(() => {
+    if (classChars.length > 0) setTargetChar(classChars[0].characterId);
+    else setTargetChar("");
+  }, [classChars]);
+
+  function pushLog(m: string) {
+    setLog((prev) => [...prev.slice(-40), m]);
+  }
+
+  async function applyBuild(b: Build, withMods: boolean) {
+    if (!defs || !targetChar || busy) return;
+    setBusy(true);
+    setLog([]);
+    pushLog("▶️ Application du build…");
+    try {
+      const res = await fetch("/api/bungie/profile?scope=gear");
+      if (!res.ok) throw new Error("profil illisible");
+      const fresh = (await res.json()) as ProfileResponse;
+      setProfile(fresh);
+      const locations = buildLocationMap(fresh);
+
+      const toEquip: string[] = [];
+      for (const id of b.pieceIds) {
+        const piece = pieceById.get(id);
+        if (!piece) continue;
+        const ok = await moveToCharacter({
+          instanceId: id,
+          itemHash: piece.itemHash,
+          name: piece.name,
+          targetCharId: targetChar,
+          location: locations.get(id),
+          log: pushLog,
+        });
+        if (ok) toEquip.push(id);
+      }
+
+      if (toEquip.length > 0) {
+        pushLog(`🎽 Équipement de ${toEquip.length} pièces…`);
+        const eq = await equipItems({ itemIds: toEquip, characterId: targetChar });
+        for (const r of eq.results) {
+          if (r.equipStatus !== 1) {
+            const name =
+              pieceById.get(r.itemInstanceId)?.name ?? r.itemInstanceId;
+            pushLog(`⚠️ ${name} : non équipée (code ${r.equipStatus} — es-tu en orbite ?)`);
+          }
+        }
+        await sleep(300);
+      }
+
+      if (withMods) {
+        // Distribue les mods +10 suggérés : un emplacement général par pièce
+        const flat: number[] = [];
+        b.mods.forEach((n, i) => {
+          for (let k = 0; k < n; k++) flat.push(ARMOR_STAT_HASHES[i]);
+        });
+        for (const id of b.pieceIds) {
+          if (flat.length === 0) break;
+          const piece = pieceById.get(id);
+          if (!piece) continue;
+          const socket = findStatModSocket(defs, piece.itemHash);
+          const statHash = flat[0];
+          const plugHash = socket?.byStat.get(statHash);
+          if (!socket || !plugHash) {
+            pushLog(`⚠️ ${piece.name} : emplacement de mod de stats introuvable.`);
+            continue;
+          }
+          flat.shift();
+          const statName =
+            defs.stats[statHash]?.displayProperties?.name ?? "stat";
+          try {
+            await insertPlug({
+              itemId: id,
+              characterId: targetChar,
+              socketIndex: socket.socketIndex,
+              plugItemHash: plugHash,
+            });
+            pushLog(`🔧 +10 ${statName} posé sur ${piece.name}.`);
+            await sleep(200);
+          } catch (e) {
+            pushLog(
+              `⚠️ ${piece.name} : mod refusé (${e instanceof Error ? e.message : "énergie insuffisante ?"})`
+            );
+          }
+        }
+      }
+      pushLog("✅ Terminé.");
+    } catch (e) {
+      pushLog(`❌ ${e instanceof Error ? e.message : "Erreur"}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const statNames = useMemo(
     () =>
@@ -411,6 +532,31 @@ export default function OptimizerPage() {
         </div>
       </div>
 
+      {classChars.length > 0 && (
+        <div className="field card" style={{ marginBottom: 16 }}>
+          <label htmlFor="targetChar">Appliquer sur le personnage</label>
+          <select
+            id="targetChar"
+            value={targetChar}
+            onChange={(e) => setTargetChar(e.target.value)}
+          >
+            {classChars.map((c) => (
+              <option key={c.characterId} value={c.characterId}>
+                {CLASS_NAMES[c.classType]} — ✦ {c.light}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {log.length > 0 && (
+        <div className="action-log">
+          {log.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+      )}
+
       {computing && (
         <div className="status">
           <div className="spinner" />
@@ -458,6 +604,24 @@ export default function OptimizerPage() {
                       Mods suggérés : {modParts.join(" · ")}
                     </p>
                   )}
+                  <div className="item-actions">
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={busy || !targetChar}
+                      onClick={() => applyBuild(b, false)}
+                    >
+                      Équiper ce build
+                    </button>
+                    {simulateMods && b.mods.some((n) => n > 0) && (
+                      <button
+                        className="btn btn-sm"
+                        disabled={busy || !targetChar}
+                        onClick={() => applyBuild(b, true)}
+                      >
+                        Équiper + poser les mods
+                      </button>
+                    )}
+                  </div>
                   <div className="build-pieces">
                     {b.pieceIds.map((id) => {
                       const p = pieceById.get(id);

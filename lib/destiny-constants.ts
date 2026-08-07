@@ -47,9 +47,15 @@ export const CLASS_NAMES: Record<number, string> = {
   2: "Arcaniste",
 };
 
+/** Bucket sous-classe */
+export const BUCKET_SUBCLASS = 3284755031;
+/** Bucket maître des postes */
+export const BUCKET_POSTMASTER = 215593132;
+
 // DestinyItemType (sous-ensemble utile)
 export const ITEM_TYPE_ARMOR = 2;
 export const ITEM_TYPE_WEAPON = 3;
+export const ITEM_TYPE_SUBCLASS = 16;
 export const ITEM_TYPE_QUEST_STEP = 12;
 export const ITEM_TYPE_QUEST = 15;
 export const ITEM_TYPE_BOUNTY = 26;

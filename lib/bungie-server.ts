@@ -54,6 +54,35 @@ export function refreshTokens(refreshToken: string): Promise<TokenResponse> {
   );
 }
 
+/** POST authentifié sur l'API Platform. Lève une erreur si ErrorCode !== 1. */
+export async function bungiePost<T>(
+  path: string,
+  body: unknown,
+  accessToken: string
+): Promise<T> {
+  const res = await fetch(`${PLATFORM}${path}`, {
+    method: "POST",
+    headers: {
+      "X-API-Key": env("BUNGIE_API_KEY"),
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => null)) as {
+    ErrorCode?: number;
+    Message?: string;
+    Response?: T;
+  } | null;
+
+  if (!res.ok || !json || json.ErrorCode !== 1) {
+    const msg = json?.Message ?? `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return json.Response as T;
+}
+
 /** GET sur l'API Platform. Lève une erreur si ErrorCode !== 1. */
 export async function bungieGet<T>(path: string, accessToken?: string): Promise<T> {
   const headers: Record<string, string> = { "X-API-Key": env("BUNGIE_API_KEY") };

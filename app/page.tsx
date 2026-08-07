@@ -54,6 +54,13 @@ export default function HomePage() {
               emplacement, élément et rareté.
             </p>
           </a>
+          <a className="home-card" href="/loadouts">
+            <h3>Loadouts</h3>
+            <p>
+              Enregistre un personnage complet (armes, armure, mods,
+              sous-classe) et réapplique-le en un clic.
+            </p>
+          </a>
           <a className="home-card" href="/optimizer">
             <h3>Optimiseur d&apos;armure</h3>
             <p>

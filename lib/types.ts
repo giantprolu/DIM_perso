@@ -28,8 +28,18 @@ export interface ItemDef {
   investmentStats?: { statTypeHash: number; value: number }[];
   sockets?: {
     socketCategories?: { socketCategoryHash: number; socketIndexes: number[] }[];
+    socketEntries?: {
+      singleInitialItemHash?: number;
+      reusablePlugSetHash?: number;
+      randomizedPlugSetHash?: number;
+    }[];
   };
   redacted?: boolean;
+}
+
+export interface PlugSetDef {
+  hash: number;
+  reusablePlugItems?: { plugItemHash: number }[];
 }
 
 export interface ObjectiveDef {
@@ -101,6 +111,7 @@ export interface Defs {
   nodes: Record<string, PresentationNodeDef>;
   seasons: Record<string, SeasonDef>;
   guardianRanks: Record<string, GuardianRankDef>;
+  plugSets: Record<string, PlugSetDef>;
 }
 
 // ---- Profil ----

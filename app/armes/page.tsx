@@ -11,7 +11,15 @@ import {
   WEAPON_BUCKETS,
   WEAPON_SLOT_ORDER,
 } from "@/lib/destiny-constants";
-import type { Defs, ProfileItem, ProfileResponse } from "@/lib/types";
+import {
+  buildLocationMap,
+  equipItems,
+  moveToCharacter,
+  transferItem,
+  type ItemLocation,
+} from "@/lib/d2-actions";
+import { CLASS_NAMES } from "@/lib/destiny-constants";
+import type { Character, Defs, ProfileItem, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
 
@@ -42,6 +50,11 @@ export default function WeaponsPage() {
   const [statusMsg, setStatusMsg] = useState("Chargement…");
   const [error, setError] = useState("");
   const [weapons, setWeapons] = useState<WeaponVM[]>([]);
+  const [defs, setDefs] = useState<Defs | null>(null);
+  const [profile, setProfile] = useState<ProfileResponse | null>(null);
+  const [selectedChar, setSelectedChar] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
   const [slotFilter, setSlotFilter] = useState<string>("all");
   const [damageFilter, setDamageFilter] = useState<string>("all");
@@ -53,6 +66,7 @@ export default function WeaponsPage() {
       try {
         const d = await loadDefs((msg) => !cancelled && setStatusMsg(msg));
         if (cancelled) return;
+        setDefs(d);
         setStatusMsg("Récupération de ton arsenal…");
         const res = await fetch("/api/bungie/profile?scope=gear");
         if (res.status === 401) {
@@ -62,7 +76,15 @@ export default function WeaponsPage() {
         const data = (await res.json()) as ProfileResponse & { error?: string };
         if (!res.ok) throw new Error(data.error ?? "Erreur profil");
         if (cancelled) return;
+        setProfile(data);
         setWeapons(buildWeapons(data, d));
+        const chars = Object.values(data.characters?.data ?? {});
+        chars.sort(
+          (a, b) =>
+            new Date(b.dateLastPlayed).getTime() -
+            new Date(a.dateLastPlayed).getTime()
+        );
+        if (chars.length > 0) setSelectedChar(chars[0].characterId);
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
@@ -146,6 +168,84 @@ export default function WeaponsPage() {
     return list;
   }
 
+  const characters: Character[] = useMemo(() => {
+    const chars = Object.values(profile?.characters?.data ?? {});
+    return chars.sort(
+      (a, b) =>
+        new Date(b.dateLastPlayed).getTime() -
+        new Date(a.dateLastPlayed).getTime()
+    );
+  }, [profile]);
+
+  const locations = useMemo(
+    () => (profile ? buildLocationMap(profile) : new Map<string, ItemLocation>()),
+    [profile]
+  );
+
+  function pushLog(m: string) {
+    setLog((prev) => [...prev.slice(-6), m]);
+  }
+
+  async function refresh() {
+    if (!defs) return;
+    const res = await fetch("/api/bungie/profile?scope=gear");
+    if (!res.ok) return;
+    const data = (await res.json()) as ProfileResponse;
+    setProfile(data);
+    setWeapons(buildWeapons(data, defs));
+  }
+
+  async function handleEquip(w: WeaponVM) {
+    if (!selectedChar || busy) return;
+    setBusy(true);
+    try {
+      const ok = await moveToCharacter({
+        instanceId: w.id,
+        itemHash: w.itemHash,
+        name: w.name,
+        targetCharId: selectedChar,
+        location: locations.get(w.id),
+        log: pushLog,
+      });
+      if (ok) {
+        const res = await equipItems({ itemIds: [w.id], characterId: selectedChar });
+        const status = res.results[0]?.equipStatus;
+        if (status === 1) pushLog(`✅ ${w.name} équipée.`);
+        else pushLog(`⚠️ ${w.name} : non équipée (code ${status} — es-tu en orbite ?)`);
+      }
+      await refresh();
+    } catch (e) {
+      pushLog(`❌ ${w.name} : ${e instanceof Error ? e.message : "erreur"}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVault(w: WeaponVM) {
+    if (busy) return;
+    const loc = locations.get(w.id);
+    if (!loc || loc.characterId === null) return;
+    if (loc.equipped) {
+      pushLog(`⚠️ ${w.name} : équipée — équipe autre chose d'abord.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      await transferItem({
+        itemReferenceHash: w.itemHash,
+        itemId: w.id,
+        transferToVault: true,
+        characterId: loc.characterId,
+      });
+      pushLog(`📦 ${w.name} envoyée au coffre.`);
+      await refresh();
+    } catch (e) {
+      pushLog(`❌ ${w.name} : ${e instanceof Error ? e.message : "erreur"}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const damageOptions = useMemo(() => {
     const m = new Map<number, string>();
     for (const w of weapons) {
@@ -202,6 +302,36 @@ export default function WeaponsPage() {
         {weapons.length} armes dans ton arsenal (coffre + personnages +
         équipé). La recherche couvre aussi les noms de perks.
       </p>
+
+      <div className="char-row">
+        {characters.map((c) => (
+          <button
+            key={c.characterId}
+            className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
+            style={
+              c.emblemBackgroundPath
+                ? {
+                    backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
+                  }
+                : undefined
+            }
+            onClick={() => setSelectedChar(c.characterId)}
+          >
+            <div className="char-class">
+              {CLASS_NAMES[c.classType] ?? "Gardien"}
+            </div>
+            <div className="char-light">✦ {c.light}</div>
+          </button>
+        ))}
+      </div>
+
+      {log.length > 0 && (
+        <div className="action-log">
+          {log.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+      )}
 
       <div className="tabs">
         <select
@@ -298,6 +428,25 @@ export default function WeaponsPage() {
                     Mods : {w.mods.map((m) => m.name).join(" · ")}
                   </div>
                 )}
+                <div className="item-actions">
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={busy || !selectedChar}
+                    onClick={() => handleEquip(w)}
+                  >
+                    Équiper
+                  </button>
+                  {locations.get(w.id)?.characterId !== null &&
+                    !locations.get(w.id)?.equipped && (
+                      <button
+                        className="btn btn-sm"
+                        disabled={busy}
+                        onClick={() => handleVault(w)}
+                      >
+                        → Coffre
+                      </button>
+                    )}
+                </div>
               </div>
             </div>
           ))}
