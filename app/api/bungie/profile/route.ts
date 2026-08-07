@@ -12,10 +12,11 @@ import type { ProfileResponse } from "@/lib/types";
 
 /** Composants Bungie par usage, pour ne demander que le nécessaire. */
 const SCOPES: Record<string, string> = {
-  // 200 personnages, 201 inventaires perso, 301 objectifs d'items
-  quests: "200,201,301",
-  // 102 coffre, 205 équipé, 300 instances, 304 stats
-  gear: "102,200,201,205,300,304",
+  // 100 profil (saison, rang), 200 personnages, 201 inventaires,
+  // 301 objectifs d'items, 900 archives (défis, rangs)
+  quests: "100,200,201,301,900",
+  // 102 coffre, 205 équipé, 300 instances, 304 stats, 305 sockets
+  gear: "102,200,201,205,300,304,305",
 };
 
 export async function GET(request: NextRequest) {

@@ -8,6 +8,7 @@ import type { SessionInfo } from "@/lib/types";
 const LINKS = [
   { href: "/", label: "Accueil" },
   { href: "/quests", label: "Quêtes" },
+  { href: "/armes", label: "Armes" },
   { href: "/optimizer", label: "Optimiseur" },
 ];
 

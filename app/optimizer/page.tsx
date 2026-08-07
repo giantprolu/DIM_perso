@@ -11,8 +11,17 @@ import {
   ITEM_TYPE_ARMOR,
   TIER_EXOTIC,
 } from "@/lib/destiny-constants";
-import { computeBestBuilds, type Build, type EnginePiece } from "@/lib/optimizer-engine";
-import type { Defs, ProfileItem, ProfileResponse } from "@/lib/types";
+import {
+  computeBestBuilds,
+  type Build,
+  type EnginePiece,
+} from "@/lib/optimizer-engine";
+import type {
+  Defs,
+  ProfileItem,
+  ProfileResponse,
+  SocketState,
+} from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
 
@@ -20,6 +29,10 @@ interface ArmorPiece extends EnginePiece {
   name: string;
   icon?: string;
   classType: number;
+  /** Stats affichées en jeu (mods actuels compris) */
+  displayedStats: number[];
+  /** Stats de base (mods actuels retirés) */
+  baseStats: number[];
 }
 
 const WEIGHT_OPTIONS = [
@@ -28,6 +41,31 @@ const WEIGHT_OPTIONS = [
   { v: 2, label: "Moyen" },
   { v: 3, label: "Fort" },
 ];
+
+/**
+ * Stats de base ≈ stats affichées − contribution des mods amovibles
+ * (plugs dont la catégorie commence par "enhancements.").
+ * Le masterwork et l'intrinsèque de la pièce restent inclus.
+ */
+function computeBaseStats(
+  displayed: number[],
+  sockets: SocketState[] | undefined,
+  defs: Defs
+): number[] {
+  if (!sockets) return displayed;
+  const out = [...displayed];
+  for (const s of sockets) {
+    if (!s.plugHash || s.isEnabled === false) continue;
+    const plugDef = defs.items[s.plugHash];
+    const category = plugDef?.plug?.plugCategoryIdentifier ?? "";
+    if (!category.startsWith("enhancements.")) continue;
+    for (const inv of plugDef?.investmentStats ?? []) {
+      const idx = ARMOR_STAT_HASHES.indexOf(inv.statTypeHash);
+      if (idx >= 0) out[idx] = Math.max(0, out[idx] - inv.value);
+    }
+  }
+  return out;
+}
 
 export default function OptimizerPage() {
   const [phase, setPhase] = useState<Phase>("loading");
@@ -39,6 +77,8 @@ export default function OptimizerPage() {
   const [exoticHash, setExoticHash] = useState<string>("none");
   const [weights, setWeights] = useState<number[]>([1, 1, 1, 1, 1, 1]);
   const [minimums, setMinimums] = useState<number[]>([0, 0, 0, 0, 0, 0]);
+  const [useBaseStats, setUseBaseStats] = useState(true);
+  const [simulateMods, setSimulateMods] = useState(true);
   const [builds, setBuilds] = useState<Build[] | null>(null);
   const [computing, setComputing] = useState(false);
 
@@ -71,6 +111,7 @@ export default function OptimizerPage() {
         ];
 
         const statsData = data.itemComponents?.stats?.data ?? {};
+        const socketsData = data.itemComponents?.sockets?.data ?? {};
         const pool: ArmorPiece[] = [];
 
         for (const item of allItems) {
@@ -81,8 +122,13 @@ export default function OptimizerPage() {
           if (!(slot in ARMOR_BUCKETS)) continue;
 
           const instStats = statsData[item.itemInstanceId]?.stats;
-          const stats = ARMOR_STAT_HASHES.map(
+          const displayedStats = ARMOR_STAT_HASHES.map(
             (h) => instStats?.[h]?.value ?? 0
+          );
+          const baseStats = computeBaseStats(
+            displayedStats,
+            socketsData[item.itemInstanceId]?.sockets,
+            d
           );
 
           pool.push({
@@ -90,7 +136,9 @@ export default function OptimizerPage() {
             itemHash: item.itemHash,
             slot,
             isExotic: def.inventory?.tierType === TIER_EXOTIC,
-            stats,
+            stats: baseStats, // remplacé au calcul selon le mode
+            displayedStats,
+            baseStats,
             name: def.displayProperties?.name || `Objet ${item.itemHash}`,
             icon: def.displayProperties?.icon,
             classType: def.classType,
@@ -155,11 +203,16 @@ export default function OptimizerPage() {
     setBuilds(null);
     // Laisse le temps au spinner de s'afficher avant le calcul synchrone
     setTimeout(() => {
+      const enginePieces = classPieces.map((p) => ({
+        ...p,
+        stats: useBaseStats ? p.baseStats : p.displayedStats,
+      }));
       const result = computeBestBuilds({
-        pieces: classPieces,
+        pieces: enginePieces,
         weights,
         minimums,
         exoticHash: exoticHash === "none" ? null : Number(exoticHash),
+        simulateMods,
       });
       setBuilds(result);
       setComputing(false);
@@ -198,6 +251,66 @@ export default function OptimizerPage() {
         (coffre + personnages + équipé).
       </p>
 
+      <details className="guide card">
+        <summary>📖 Guide de l&apos;optimiseur — comment ça marche</summary>
+        <div className="guide-body">
+          <h4>Le principe</h4>
+          <p>
+            Le moteur teste les combinaisons casque × gants × torse × jambes ×
+            objet de classe parmi <em>tes</em> pièces, puis classe les builds
+            par un score : la somme de tes 6 stats, chacune multipliée par le
+            poids que tu lui donnes.
+          </p>
+          <h4>Classe</h4>
+          <p>
+            Seules les armures de la classe choisie sont prises en compte. Par
+            défaut : ton dernier personnage joué.
+          </p>
+          <h4>Exotique verrouillé</h4>
+          <p>
+            Choisis l&apos;exotique autour duquel tu construis : il sera imposé
+            dans son emplacement, et les autres emplacements ne contiendront
+            que du légendaire (une seule pièce exotique par build, comme en
+            jeu). « Aucun exotique » = build 100&nbsp;% légendaire.
+          </p>
+          <h4>Priorités (poids)</h4>
+          <p>
+            <strong>Ignorer</strong> = la stat ne compte pas dans le score.
+            <strong> Faible / Moyen / Fort</strong> = ×1 / ×2 / ×3. Exemple
+            build grenade : Grenade sur Fort, Super sur Moyen, le reste sur
+            Faible ou Ignorer.
+          </p>
+          <h4>Minimum</h4>
+          <p>
+            Seuil obligatoire : tout build sous ce total pour la stat est
+            éliminé. Utile pour garantir par exemple 100 en Santé quoi
+            qu&apos;il arrive. Les cases en rouge dans les résultats signalent
+            un minimum non atteint.
+          </p>
+          <h4>Stats de base vs affichées</h4>
+          <p>
+            <strong>Stats de base</strong> (recommandé) : le moteur retire la
+            contribution des mods actuellement posés sur tes pièces — tu
+            compares le vrai potentiel des armures, puisque les mods se
+            déplacent librement. <strong>Stats affichées</strong> : telles
+            quelles en jeu, mods compris.
+          </p>
+          <h4>Simulation des mods de stats</h4>
+          <p>
+            Le moteur suppose un mod de stat (+10) par pièce, soit 5 mods : il
+            les place d&apos;abord pour atteindre tes minimums, puis met le
+            reste dans ta stat la plus pondérée. La ligne « Mods suggérés »
+            de chaque build te dit quoi poser.
+          </p>
+          <h4>Et les armes ?</h4>
+          <p>
+            Les armes ne portent pas de stats d&apos;armure : elles
+            n&apos;entrent pas dans ce calcul. Ton arsenal complet (perks et
+            mods compris) est sur la page <a href="/armes">Armes</a>.
+          </p>
+        </div>
+      </details>
+
       <div className="opt-controls">
         <div className="tabs">
           {Object.entries(CLASS_NAMES).map(([value, label]) => (
@@ -229,6 +342,24 @@ export default function OptimizerPage() {
               </option>
             ))}
           </select>
+          <div className="toggle-row">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={useBaseStats}
+                onChange={(e) => setUseBaseStats(e.target.checked)}
+              />
+              Utiliser les stats de base (mods actuels retirés)
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={simulateMods}
+                onChange={(e) => setSimulateMods(e.target.checked)}
+              />
+              Simuler 5 mods de stats (+10)
+            </label>
+          </div>
         </div>
 
         <div>
@@ -292,11 +423,15 @@ export default function OptimizerPage() {
           {builds.length === 0 ? (
             <div className="error-box">
               Aucun build ne respecte ces minimums avec ton arsenal actuel.
-              Assouplis les contraintes ou change d&apos;exotique.
+              Assouplis les contraintes, active la simulation de mods ou change
+              d&apos;exotique.
             </div>
           ) : (
             builds.map((b, rank) => {
               const total = b.totals.reduce((a, v) => a + v, 0);
+              const modParts = b.mods
+                .map((n, i) => (n > 0 ? `${n} × +10 ${statNames[i]}` : null))
+                .filter(Boolean);
               return (
                 <div className="build-card" key={b.pieceIds.join(".")}>
                   <div className="build-header">
@@ -318,6 +453,11 @@ export default function OptimizerPage() {
                       </div>
                     ))}
                   </div>
+                  {modParts.length > 0 && (
+                    <p className="mods-line">
+                      Mods suggérés : {modParts.join(" · ")}
+                    </p>
+                  )}
                   <div className="build-pieces">
                     {b.pieceIds.map((id) => {
                       const p = pieceById.get(id);
@@ -346,8 +486,13 @@ export default function OptimizerPage() {
             })
           )}
           <p className="note">
-            Les stats utilisées sont celles affichées en jeu, mods actuellement
-            équipés compris (le calcul sur stats de base viendra en v2).
+            Mode :{" "}
+            {useBaseStats
+              ? "stats de base (mods actuels retirés)"
+              : "stats affichées (mods actuels compris)"}
+            {simulateMods ? " · simulation de 5 mods de stats (+10) activée" : ""}
+            . Les bonus de set et mods d&apos;accord ne sont pas encore
+            simulés.
           </p>
         </div>
       )}

@@ -1,4 +1,4 @@
-import { ARMOR_SLOT_ORDER } from "./destiny-constants";
+import { ARMOR_SLOT_ORDER, STAT_CAP } from "./destiny-constants";
 
 /**
  * Moteur d'optimisation d'équipement.
@@ -7,10 +7,12 @@ import { ARMOR_SLOT_ORDER } from "./destiny-constants";
  * objet de classe, on filtre sur les minimums de stats demandés, et on
  * maximise un score = somme pondérée des 6 stats.
  *
+ * Option "simulation de mods" : le moteur suppose que tu peux poser un mod
+ * de stat (+10) sur chacune des 5 pièces. Il les assigne d'abord pour
+ * atteindre les minimums, puis met le reste dans la stat la plus pondérée.
+ *
  * Pour rester instantané, chaque emplacement est pré-trié par score et
- * tronqué (les pièces verrouillées sont toujours conservées). Avec des
- * poids purs (sans minimums), le meilleur build est de toute façon dans
- * ce sous-ensemble.
+ * tronqué (les pièces verrouillées sont toujours conservées).
  */
 
 export interface EnginePiece {
@@ -33,16 +35,22 @@ export interface EngineParams {
   minimums: number[];
   /** Hash de l'exotique à verrouiller, ou null pour un build 100 % légendaire */
   exoticHash: number | null;
+  /** Simuler 5 mods de stats (+10 chacun) */
+  simulateMods?: boolean;
 }
 
 export interface Build {
   pieceIds: string[];
   totals: number[];
+  /** Mods simulés par stat (nombre de +10), longueur 6 */
+  mods: number[];
   score: number;
 }
 
 const TRIM_MAIN = 22; // casque / gants / torse / jambes
 const TRIM_CLASS = 10; // objet de classe
+const MOD_COUNT = 5;
+const MOD_VALUE = 10;
 
 function weightedScore(stats: number[], weights: number[]): number {
   let s = 0;
@@ -51,7 +59,7 @@ function weightedScore(stats: number[], weights: number[]): number {
 }
 
 export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
-  const { pieces, weights, minimums, exoticHash } = params;
+  const { pieces, weights, minimums, exoticHash, simulateMods } = params;
 
   const exoticSlot =
     exoticHash !== null
@@ -84,7 +92,14 @@ export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
 
   const [helmets, gauntlets, chests, legs, classItems] = perSlot;
 
+  // Stat cible des mods restants : la plus pondérée (première en cas d'égalité)
+  let favoriteStat = 0;
+  for (let i = 1; i < 6; i++) {
+    if (weights[i] > weights[favoriteStat]) favoriteStat = i;
+  }
+
   const totals = new Array<number>(6);
+  const mods = new Array<number>(6);
 
   for (const h of helmets) {
     for (const g of gauntlets) {
@@ -94,9 +109,37 @@ export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
             for (let i = 0; i < 6; i++) {
               totals[i] =
                 h.stats[i] + g.stats[i] + c.stats[i] + l.stats[i] + ci.stats[i];
+              mods[i] = 0;
             }
 
-            if (hasMinimums) {
+            if (simulateMods) {
+              let modsLeft = MOD_COUNT;
+              // 1) combler les minimums
+              if (hasMinimums) {
+                let feasible = true;
+                for (let i = 0; i < 6; i++) {
+                  if (totals[i] < minimums[i]) {
+                    const need = Math.ceil((minimums[i] - totals[i]) / MOD_VALUE);
+                    if (need > modsLeft) {
+                      feasible = false;
+                      break;
+                    }
+                    modsLeft -= need;
+                    mods[i] += need;
+                    totals[i] = Math.min(STAT_CAP, totals[i] + need * MOD_VALUE);
+                  }
+                }
+                if (!feasible) continue;
+              }
+              // 2) le reste dans la stat favorite
+              if (modsLeft > 0 && weights[favoriteStat] > 0) {
+                mods[favoriteStat] += modsLeft;
+                totals[favoriteStat] = Math.min(
+                  STAT_CAP,
+                  totals[favoriteStat] + modsLeft * MOD_VALUE
+                );
+              }
+            } else if (hasMinimums) {
               let ok = true;
               for (let i = 0; i < 6; i++) {
                 if (totals[i] < minimums[i]) {
@@ -118,6 +161,7 @@ export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
             results.push({
               pieceIds: [h.id, g.id, c.id, l.id, ci.id],
               totals: [...totals],
+              mods: [...mods],
               score,
             });
             results.sort((a, b) => b.score - a.score);

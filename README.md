@@ -4,12 +4,18 @@ Compagnon Destiny 2 minimaliste, à usage personnel, dans l'esprit de
 [Destiny Item Manager](https://destinyitemmanager.com/) mais réduit à
 l'essentiel :
 
-- **Quêtes & primes** — toutes les poursuites de chaque personnage avec la
-  progression détaillée de chaque objectif, filtres et échéances des primes.
-- **Optimiseur d'armure** — à partir de ce que tu possèdes réellement
-  (coffre + personnages + équipé), calcule les meilleures combinaisons
-  casque / gants / torse / jambes / objet de classe selon tes priorités de
-  stats, avec exotique verrouillé et minimums par stat.
+- **Quêtes & progression** — poursuites (quêtes, primes) de chaque
+  personnage, **défis saisonniers** groupés par semaine et objectifs des
+  **rangs de Gardien**, avec la progression détaillée de chaque objectif.
+- **Armes** — tout l'arsenal (coffre + personnages + équipé) avec perks et
+  mods équipés, filtrable par emplacement, élément, rareté et recherche
+  (y compris par nom de perk).
+- **Optimiseur d'armure** — à partir de ce que tu possèdes réellement,
+  calcule les meilleures combinaisons casque / gants / torse / jambes /
+  objet de classe selon tes priorités de stats : exotique verrouillé,
+  minimums par stat, calcul sur **stats de base** (mods retirés) et
+  **simulation de 5 mods de stats (+10)**. Un guide intégré explique chaque
+  filtre.
 
 Stack : **Next.js 15 (App Router) + TypeScript**, zéro dépendance superflue.
 Le manifest Destiny 2 est mis en cache dans IndexedDB côté navigateur
@@ -96,12 +102,13 @@ Choix notables :
   candidats pour rester instantané, en conservant toujours l'exotique
   verrouillé.
 
-## Limites connues (v1) & roadmap
+## Limites connues & roadmap
 
-- Les stats d'armure utilisées sont celles **affichées en jeu** (mods
-  équipés compris), pas les stats de base → v2 : recalcul des stats de base
-  via les sockets.
-- Pas encore de bonus de set / archétypes / mods d'accord dans le score.
+- Stats de base = stats affichées moins les mods amovibles (catégories de
+  plugs `enhancements.*`) ; le masterwork reste inclus. Approximation
+  fidèle dans la quasi-totalité des cas.
+- Bonus de set, archétypes et mods d'accord pas encore simulés dans le
+  score.
 - Pas de transfert d'objets ni de sauvegarde de loadouts (lecture seule).
 - Manifest en français uniquement (constante à changer dans
   `lib/manifest-client.ts` si besoin).

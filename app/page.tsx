@@ -41,10 +41,17 @@ export default function HomePage() {
       ) : session.loggedIn ? (
         <div className="home-cards">
           <a className="home-card" href="/quests">
-            <h3>Quêtes &amp; primes</h3>
+            <h3>Quêtes &amp; progression</h3>
             <p>
-              Toutes tes poursuites par personnage, avec la progression de
-              chaque objectif.
+              Poursuites, défis saisonniers et rangs de Gardien, avec la
+              progression de chaque objectif.
+            </p>
+          </a>
+          <a className="home-card" href="/armes">
+            <h3>Armes</h3>
+            <p>
+              Tout ton arsenal avec perks et mods équipés, filtrable par
+              emplacement, élément et rareté.
             </p>
           </a>
           <a className="home-card" href="/optimizer">

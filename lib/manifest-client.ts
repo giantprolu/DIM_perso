@@ -20,6 +20,11 @@ const TABLES = [
   "DestinyStatDefinition",
   "DestinyClassDefinition",
   "DestinyInventoryBucketDefinition",
+  "DestinyDamageTypeDefinition",
+  "DestinyRecordDefinition",
+  "DestinyPresentationNodeDefinition",
+  "DestinySeasonDefinition",
+  "DestinyGuardianRankDefinition",
 ] as const;
 
 function openDb(): Promise<IDBDatabase> {

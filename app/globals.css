@@ -522,3 +522,120 @@ a {
   color: var(--text-dim);
   font-size: 14px;
 }
+
+/* ---------- Guide ---------- */
+.guide {
+  margin-bottom: 20px;
+}
+
+.guide summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.guide-body {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.guide-body h4 {
+  color: var(--text);
+  margin: 14px 0 4px;
+}
+
+.guide-body p {
+  margin: 0 0 6px;
+}
+
+/* ---------- Toggles & selects de filtre ---------- */
+.toggle-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--accent);
+}
+
+.filter-select {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* ---------- Perks / mods d'armes ---------- */
+.plug-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.plug img {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #10151c;
+  border: 1px solid var(--border);
+  padding: 2px;
+}
+
+.plug-labels {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.damage-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
+/* ---------- Archives (défis, rangs) ---------- */
+.record-group {
+  margin-bottom: 26px;
+}
+
+.record-group h3 {
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.group-count {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.record-done {
+  opacity: 0.55;
+}
+
+.done-badge {
+  color: var(--success);
+}
+
+.mods-line {
+  font-size: 13px;
+  color: var(--accent);
+  margin: 0 0 10px;
+}
