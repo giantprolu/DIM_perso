@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import {
   ARMOR_BUCKETS,
@@ -93,6 +93,15 @@ export default function OptimizerPage() {
   const [simulateMods, setSimulateMods] = useState(true);
   const [builds, setBuilds] = useState<Build[] | null>(null);
   const [selBuild, setSelBuild] = useState(0);
+  const detailRef = useRef<HTMLDivElement | null>(null);
+
+  function selectBuild(rank: number) {
+    setSelBuild(rank);
+    // Amène la carte Détail à l'écran pour un retour visuel immédiat
+    setTimeout(() => {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  }
   const [computing, setComputing] = useState(false);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [targetChar, setTargetChar] = useState("");
@@ -641,6 +650,7 @@ export default function OptimizerPage() {
                             </th>
                           ))}
                           <th className="text-right w-16">Total</th>
+                          <th className="w-16"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -653,13 +663,20 @@ export default function OptimizerPage() {
                             .filter(Boolean);
                           return (
                             <tr
-                              key={b.pieceIds.join(".")}
-                              className={`cursor-pointer${
-                                rank === selBuild ? " bg-base-300" : ""
+                              key={`${rank}-${b.pieceIds.join(".")}`}
+                              className={`cursor-pointer transition-colors hover:bg-base-300 ${
+                                rank === selBuild ? "!bg-primary/15" : ""
                               }`}
-                              onClick={() => setSelBuild(rank)}
+                              onClick={() => selectBuild(rank)}
                             >
-                              <th>{rank + 1}</th>
+                              <th
+                                className={
+                                  rank === selBuild ? "text-primary" : ""
+                                }
+                              >
+                                {rank === selBuild ? "▸ " : ""}
+                                {rank + 1}
+                              </th>
                               <td>
                                 <div className="flex items-center gap-1">
                                   {b.pieceIds.map((id) => {
@@ -701,6 +718,21 @@ export default function OptimizerPage() {
                               <td className="text-right font-mono text-lg">
                                 {total}
                               </td>
+                              <td className="text-right">
+                                <button
+                                  className={`btn btn-xs ${
+                                    rank === selBuild
+                                      ? "btn-primary"
+                                      : "btn-outline btn-primary"
+                                  }`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    selectBuild(rank);
+                                  }}
+                                >
+                                  {rank === selBuild ? "Affiché" : "Voir"}
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
@@ -711,11 +743,17 @@ export default function OptimizerPage() {
               </div>
 
               {sel && (
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+                <div
+                  ref={detailRef}
+                  className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start scroll-mt-20"
+                >
                   <div className="card bg-base-200 shadow xl:col-span-2 min-w-0">
                     <div className="card-body">
                       <h2 className="card-title text-base">
                         Détail — assemblage #{Math.min(selBuild, builds.length - 1) + 1}
+                        <span className="badge badge-sm badge-primary badge-outline">
+                          sélectionné dans le tableau
+                        </span>
                       </h2>
                       <div className="overflow-x-auto">
                         <table className="table table-sm">
