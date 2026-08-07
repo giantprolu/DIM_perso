@@ -26,12 +26,6 @@ import {
   sleep,
 } from "@/lib/d2-actions";
 import {
-  captureEquipment,
-  loadLoadouts,
-  persistLoadouts,
-  type Loadout,
-} from "@/lib/loadouts";
-import {
   captureEquippedLoadout,
   loadLoadouts,
   persistLoadouts,
@@ -103,7 +97,6 @@ export default function OptimizerPage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [targetChar, setTargetChar] = useState("");
   const [busy, setBusy] = useState(false);
-  const [saveAfter, setSaveAfter] = useState(true);
   const [log, setLog] = useState<string[]>([]);
   const [saveAsLoadout, setSaveAsLoadout] = useState(true);
 
@@ -325,19 +318,18 @@ export default function OptimizerPage() {
         if (finalRes.ok) {
           const finalProfile = (await finalRes.json()) as ProfileResponse;
           setProfile(finalProfile);
-          const items = captureEquipment(defs, finalProfile, targetChar);
           const total = b.totals.reduce((a, v) => a + v, 0);
           const exoticName =
             b.pieceIds
               .map((id) => pieceById.get(id))
               .find((p) => p?.isExotic)?.name ?? "légendaire";
-          const loadout: Loadout = {
-            id: crypto.randomUUID(),
-            name: `Optimiseur · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ${total} pts`,
-            classType: selectedClass,
-            createdAt: new Date().toISOString(),
-            items,
-          };
+          const loadout = captureEquippedLoadout(
+            defs,
+            finalProfile,
+            targetChar,
+            selectedClass,
+            `Optimiseur · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ${total} pts`
+          );
           persistLoadouts([loadout, ...loadLoadouts()]);
           pushLog(
             `💾 Loadout « ${loadout.name} » enregistré — retrouve-le dans l'onglet Loadouts.`
@@ -787,18 +779,7 @@ export default function OptimizerPage() {
                           className="checkbox checkbox-primary checkbox-xs"
                         />
                       </label>
-                      <div className="card-actions justify-end items-center">
-                        <label className="label cursor-pointer justify-start gap-2 py-0 mr-auto">
-                          <input
-                            type="checkbox"
-                            checked={saveAfter}
-                            onChange={(e) => setSaveAfter(e.target.checked)}
-                            className="checkbox checkbox-primary checkbox-xs"
-                          />
-                          <span className="label-text text-xs">
-                            💾 Sauvegarder en loadout après équipement
-                          </span>
-                        </label>
+                      <div className="card-actions justify-end">
                         {simulateMods && sel.mods.some((n) => n > 0) && (
                           <button
                             className="btn btn-outline btn-sm"

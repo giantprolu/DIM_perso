@@ -11,7 +11,7 @@ import {
   sleep,
 } from "@/lib/d2-actions";
 import {
-  captureEquipment,
+  captureEquippedLoadout,
   loadLoadouts,
   persistLoadouts,
   type Loadout,
@@ -96,16 +96,14 @@ export default function LoadoutsPage() {
     try {
       const data = await fetchProfile();
       if (!data) return;
-      const items = captureEquipment(defs, data, selectedChar);
-      const loadout: Loadout = {
-        id: crypto.randomUUID(),
-        name:
-          name.trim() ||
-          `${CLASS_NAMES[currentChar.classType]} — ${new Date().toLocaleDateString("fr-FR")}`,
-        classType: currentChar.classType,
-        createdAt: new Date().toISOString(),
-        items,
-      };
+      const loadout = captureEquippedLoadout(
+        defs,
+        data,
+        selectedChar,
+        currentChar.classType,
+        name.trim() ||
+          `${CLASS_NAMES[currentChar.classType]} — ${new Date().toLocaleDateString("fr-FR")}`
+      );
       const next = [loadout, ...loadouts];
       setLoadouts(next);
       persistLoadouts(next);
