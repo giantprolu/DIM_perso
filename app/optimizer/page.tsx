@@ -25,6 +25,12 @@ import {
   moveToCharacter,
   sleep,
 } from "@/lib/d2-actions";
+import {
+  captureEquipment,
+  loadLoadouts,
+  persistLoadouts,
+  type Loadout,
+} from "@/lib/loadouts";
 import type {
   Character,
   Defs,
@@ -93,6 +99,7 @@ export default function OptimizerPage() {
   const [targetChar, setTargetChar] = useState("");
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
+  const [saveAsLoadout, setSaveAsLoadout] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -305,7 +312,35 @@ export default function OptimizerPage() {
           }
         }
       }
-      pushLog("✅ Terminé.");
+      if (saveAsLoadout) {
+        pushLog("💾 Enregistrement du loadout…");
+        await sleep(300);
+        const finalRes = await fetch("/api/bungie/profile?scope=gear");
+        if (finalRes.ok) {
+          const finalProfile = (await finalRes.json()) as ProfileResponse;
+          setProfile(finalProfile);
+          const items = captureEquipment(defs, finalProfile, targetChar);
+          const total = b.totals.reduce((a, v) => a + v, 0);
+          const exoticName =
+            b.pieceIds
+              .map((id) => pieceById.get(id))
+              .find((p) => p?.isExotic)?.name ?? "légendaire";
+          const loadout: Loadout = {
+            id: crypto.randomUUID(),
+            name: `Optimiseur · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ${total} pts`,
+            classType: selectedClass,
+            createdAt: new Date().toISOString(),
+            items,
+          };
+          persistLoadouts([loadout, ...loadLoadouts()]);
+          pushLog(
+            `💾 Loadout « ${loadout.name} » enregistré — retrouve-le dans l'onglet Loadouts.`
+          );
+        } else {
+          pushLog("⚠️ Loadout non enregistré (profil illisible après équipement).");
+        }
+      }
+      pushLog("✅ Terminé — ton personnage aura cet équipement en jeu.");
     } catch (e) {
       pushLog(`❌ ${e instanceof Error ? e.message : "Erreur"}`);
     } finally {
@@ -735,6 +770,17 @@ export default function OptimizerPage() {
                           </tbody>
                         </table>
                       </div>
+                      <label className="label cursor-pointer justify-end gap-2 py-0">
+                        <span className="label-text text-xs opacity-70">
+                          💾 Enregistrer en loadout après équipement
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={saveAsLoadout}
+                          onChange={(e) => setSaveAsLoadout(e.target.checked)}
+                          className="checkbox checkbox-primary checkbox-xs"
+                        />
+                      </label>
                       <div className="card-actions justify-end">
                         {simulateMods && sel.mods.some((n) => n > 0) && (
                           <button

@@ -2,16 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
-import {
-  ARMOR_SLOT_ORDER,
-  BUCKET_SUBCLASS,
-  BUNGIE_ROOT,
-  CLASS_NAMES,
-  ITEM_TYPE_ARMOR,
-  ITEM_TYPE_WEAPON,
-  SOCKET_CATEGORY_WEAPON_MODS,
-  WEAPON_SLOT_ORDER,
-} from "@/lib/destiny-constants";
+import { BUNGIE_ROOT, CLASS_NAMES } from "@/lib/destiny-constants";
 import {
   buildLocationMap,
   equipItems,
@@ -20,20 +11,14 @@ import {
   sleep,
 } from "@/lib/d2-actions";
 import {
+  captureEquipment,
   loadLoadouts,
   persistLoadouts,
   type Loadout,
-  type SavedItem,
 } from "@/lib/loadouts";
 import type { Character, Defs, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
-
-const LOADOUT_BUCKETS = new Set<number>([
-  ...WEAPON_SLOT_ORDER,
-  ...ARMOR_SLOT_ORDER,
-  BUCKET_SUBCLASS,
-]);
 
 export default function LoadoutsPage() {
   const [phase, setPhase] = useState<Phase>("loading");
@@ -105,62 +90,13 @@ export default function LoadoutsPage() {
 
   const currentChar = characters.find((c) => c.characterId === selectedChar);
 
-  /** Plugs à sauvegarder pour un item équipé donné. */
-  function capturePlugs(
-    d: Defs,
-    data: ProfileResponse,
-    instanceId: string,
-    itemHash: number
-  ) {
-    const def = d.items[itemHash];
-    const states =
-      data.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
-    const plugs: { socketIndex: number; plugHash: number }[] = [];
-
-    const weaponModIndexes = new Set(
-      def?.sockets?.socketCategories?.find(
-        (c) => c.socketCategoryHash === SOCKET_CATEGORY_WEAPON_MODS
-      )?.socketIndexes ?? []
-    );
-
-    for (let i = 0; i < states.length; i++) {
-      const plugHash = states[i]?.plugHash;
-      if (!plugHash) continue;
-      const plugDef = d.items[plugHash];
-      const category = plugDef?.plug?.plugCategoryIdentifier ?? "";
-
-      let keep = false;
-      if (def?.itemType === ITEM_TYPE_ARMOR) {
-        keep = category.startsWith("enhancements.");
-      } else if (def?.itemType === ITEM_TYPE_WEAPON) {
-        keep = weaponModIndexes.has(i);
-      } else if (def?.inventory?.bucketTypeHash === BUCKET_SUBCLASS) {
-        keep = true; // aspects, fragments, capacités
-      }
-      if (keep) plugs.push({ socketIndex: i, plugHash });
-    }
-    return plugs;
-  }
-
   async function saveCurrent() {
     if (!defs || !currentChar) return;
     setBusy(true);
     try {
       const data = await fetchProfile();
       if (!data) return;
-      const equipped =
-        data.characterEquipment?.data?.[selectedChar]?.items ?? [];
-      const items: SavedItem[] = [];
-      for (const item of equipped) {
-        if (!item.itemInstanceId) continue;
-        if (!LOADOUT_BUCKETS.has(item.bucketHash)) continue;
-        items.push({
-          itemInstanceId: item.itemInstanceId,
-          itemHash: item.itemHash,
-          bucketHash: item.bucketHash,
-          plugs: capturePlugs(defs, data, item.itemInstanceId, item.itemHash),
-        });
-      }
+      const items = captureEquipment(defs, data, selectedChar);
       const loadout: Loadout = {
         id: crypto.randomUUID(),
         name:
