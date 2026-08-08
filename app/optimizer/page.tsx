@@ -11,11 +11,15 @@ import {
   ITEM_TYPE_ARMOR,
   STAT_CAP,
   TIER_EXOTIC,
+  WEAPON_SLOT_ORDER,
 } from "@/lib/destiny-constants";
 import {
   computeBestBuilds,
+  computeBestPowerBuilds,
   type Build,
   type EnginePiece,
+  type PowerBuild,
+  type PowerPiece,
 } from "@/lib/optimizer-engine";
 import {
   buildLocationMap,
@@ -46,6 +50,66 @@ interface ArmorPiece extends EnginePiece {
   classType: number;
   displayedStats: number[];
   baseStats: number[];
+  power: number;
+}
+
+/** Somme des Puissances des objets équipés d'un personnage, sur les buckets donnés. */
+function equippedPowerSum(
+  profile: ProfileResponse,
+  defs: Defs,
+  charId: string,
+  buckets: number[]
+): number {
+  const bucketSet = new Set(buckets);
+  const instances = profile.itemComponents?.instances?.data ?? {};
+  const items = profile.characterEquipment?.data?.[charId]?.items ?? [];
+  let sum = 0;
+  for (const item of items) {
+    const def = defs.items[item.itemHash];
+    const slot = def?.inventory?.bucketTypeHash;
+    if (slot === undefined || !bucketSet.has(slot)) continue;
+    const power = item.itemInstanceId
+      ? (instances[item.itemInstanceId]?.primaryStat?.value ?? 0)
+      : 0;
+    sum += power;
+  }
+  return sum;
+}
+
+const MOD_COUNT = 5;
+const MOD_VALUE = 10;
+
+/** Une ligne du tableau Puissance : l'assemblage + son plan de mods d'équilibrage. */
+interface PowerRow {
+  pb: PowerBuild;
+  base: number[];
+  mods: number[];
+  finalTotals: number[];
+}
+
+/**
+ * Règle d'équilibrage sans réglage : chaque mod +10 va sur la stat la plus
+ * basse encore sous le plafond. Renvoie 6 compteurs de mods (total = count).
+ */
+function balanceStatMods(totals: number[], count: number): number[] {
+  const mods = [0, 0, 0, 0, 0, 0];
+  const work = [...totals];
+  for (let k = 0; k < count; k++) {
+    let idx = -1;
+    for (let i = 0; i < 6; i++) {
+      if (work[i] + MOD_VALUE > STAT_CAP) continue;
+      if (idx === -1 || work[i] < work[idx]) idx = i;
+    }
+    // Toutes les stats sont au plafond : on relève quand même la plus basse.
+    if (idx === -1) {
+      for (let i = 0; i < 6; i++) {
+        if (idx === -1 || work[i] < work[idx]) idx = i;
+      }
+    }
+    work[idx] += MOD_VALUE;
+    mods[idx] += 1;
+  }
+  return mods;
 }
 
 const WEIGHT_OPTIONS = [
@@ -93,6 +157,9 @@ export default function OptimizerPage() {
   const [simulateMods, setSimulateMods] = useState(true);
   const [builds, setBuilds] = useState<Build[] | null>(null);
   const [selBuild, setSelBuild] = useState(0);
+  const [powerBuilds, setPowerBuilds] = useState<PowerBuild[] | null>(null);
+  const [computingPower, setComputingPower] = useState(false);
+  const [powerError, setPowerError] = useState("");
   const detailRef = useRef<HTMLDivElement | null>(null);
 
   function selectBuild(rank: number) {
@@ -139,6 +206,7 @@ export default function OptimizerPage() {
 
         const statsData = data.itemComponents?.stats?.data ?? {};
         const socketsData = data.itemComponents?.sockets?.data ?? {};
+        const instancesData = data.itemComponents?.instances?.data ?? {};
         const pool: ArmorPiece[] = [];
 
         for (const item of allItems) {
@@ -166,6 +234,7 @@ export default function OptimizerPage() {
             stats: baseStats,
             displayedStats,
             baseStats,
+            power: instancesData[item.itemInstanceId]?.primaryStat?.value ?? 0,
             name: def.displayProperties?.name || `Objet ${item.itemHash}`,
             icon: def.displayProperties?.icon,
             classType: def.classType,
@@ -238,7 +307,7 @@ export default function OptimizerPage() {
     setLog((prev) => [...prev.slice(-40), m]);
   }
 
-  async function applyBuild(b: Build, withMods: boolean) {
+  async function applyBuild(b: Build, withMods: boolean, nameOverride?: string) {
     if (!defs || !targetChar || busy) return;
     setBusy(true);
     setLog([]);
@@ -337,7 +406,8 @@ export default function OptimizerPage() {
             finalProfile,
             targetChar,
             selectedClass,
-            `Optimiseur · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ${total} pts`
+            nameOverride ??
+              `Optimiseur · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ${total} pts`
           );
           persistLoadouts([loadout, ...loadLoadouts()]);
           pushLog(
@@ -384,6 +454,91 @@ export default function OptimizerPage() {
     }, 30);
   }
 
+  const currentLight = useMemo(
+    () => characters.find((c) => c.characterId === targetChar)?.light ?? 0,
+    [characters, targetChar]
+  );
+
+  function runPower() {
+    if (!profile || !defs || !targetChar) return;
+    setComputingPower(true);
+    setPowerBuilds(null);
+    setPowerError("");
+    setTimeout(() => {
+      const fixedWeaponPower = equippedPowerSum(
+        profile,
+        defs,
+        targetChar,
+        WEAPON_SLOT_ORDER
+      );
+      const currentArmorPower = equippedPowerSum(
+        profile,
+        defs,
+        targetChar,
+        ARMOR_SLOT_ORDER
+      );
+      const offset =
+        currentLight - Math.floor((fixedWeaponPower + currentArmorPower) / 8);
+      const armorPieces: PowerPiece[] = classPieces.map((p) => ({
+        id: p.id,
+        itemHash: p.itemHash,
+        slot: p.slot,
+        isExotic: p.isExotic,
+        power: p.power,
+      }));
+      const result = computeBestPowerBuilds(
+        { armorPieces, fixedWeaponPower, offset },
+        5
+      );
+      const kept = result.filter((b) => b.totalPower >= currentLight);
+      if (kept.length === 0) {
+        setPowerError(
+          "Impossible de calculer un assemblage légal avec ton armure actuelle."
+        );
+      }
+      setPowerBuilds(kept);
+      setComputingPower(false);
+    }, 30);
+  }
+
+  const powerRows: PowerRow[] = useMemo(() => {
+    if (!powerBuilds) return [];
+    return powerBuilds.map((pb) => {
+      const base = [0, 0, 0, 0, 0, 0];
+      for (const id of pb.pieceIds) {
+        const p = pieceById.get(id);
+        if (!p) continue;
+        const stats = useBaseStats ? p.baseStats : p.displayedStats;
+        stats.forEach((v, i) => (base[i] += v));
+      }
+      const mods = balanceStatMods(base, MOD_COUNT);
+      const finalTotals = base.map((v, i) =>
+        Math.min(STAT_CAP, v + mods[i] * MOD_VALUE)
+      );
+      return { pb, base, mods, finalTotals };
+    });
+  }, [powerBuilds, pieceById, useBaseStats]);
+
+  async function equipPowerBuild(row: PowerRow, withMods: boolean) {
+    const { pb, base, mods, finalTotals } = row;
+    const exoticName =
+      pb.pieceIds.map((id) => pieceById.get(id)).find((p) => p?.isExotic)?.name ??
+      "légendaire";
+    await applyBuild(
+      {
+        pieceIds: pb.pieceIds,
+        totals: withMods ? finalTotals : base,
+        mods: withMods ? mods : [0, 0, 0, 0, 0, 0],
+        score: pb.totalPower,
+      },
+      withMods,
+      `Puissance · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ✦ ${pb.totalPower}`
+    );
+    // La Puissance actuelle vient de changer : on invalide la liste pour ne
+    // jamais proposer un assemblage désormais inférieur au nouveau score.
+    setPowerBuilds(null);
+  }
+
   if (phase === "loading") {
     return (
       <div className="flex flex-col items-center gap-4 py-16 opacity-70">
@@ -421,6 +576,143 @@ export default function OptimizerPage() {
         <span className="badge badge-ghost">
           {classPieces.length} pièces analysées
         </span>
+      </div>
+
+      <div className="card bg-base-200 shadow border border-primary/30">
+        <div className="card-body gap-3">
+          <div className="flex items-baseline justify-between flex-wrap gap-2">
+            <h2 className="card-title text-base">
+              ⚡ Optimiser ma Puissance
+            </h2>
+            {targetChar && (
+              <span className="badge badge-ghost">
+                Actuellement ✦ {currentLight}
+              </span>
+            )}
+          </div>
+          <p className="text-sm opacity-70">
+            Aucun réglage : on cherche, parmi ton armure possédée (
+            {CLASS_NAMES[selectedClass]}), l&apos;assemblage 5 pièces (1
+            exotique max) qui maximise ta Puissance totale. Tes armes
+            équipées ne sont pas changées. Résultat toujours ≥ à ta
+            Puissance actuelle. Les 5 mods +10 sont posés en{" "}
+            <strong>équilibrage</strong> (sur tes stats les plus basses) — ils
+            n&apos;affectent pas la Puissance mais complètent le build.
+          </p>
+
+          {!targetChar ? (
+            <div role="alert" className="alert alert-warning text-sm">
+              <span>
+                Choisis un personnage cible ci-dessous (panneau Réglages)
+                pour lancer le calcul.
+              </span>
+            </div>
+          ) : (
+            <button
+              className="btn btn-primary btn-sm w-fit"
+              onClick={runPower}
+              disabled={computingPower || classPieces.length === 0}
+            >
+              {computingPower ? "Calcul…" : "Calculer ma meilleure Puissance"}
+            </button>
+          )}
+
+          {powerError && (
+            <div role="alert" className="alert alert-error text-sm">
+              <span>{powerError}</span>
+            </div>
+          )}
+
+          {powerRows.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="table table-zebra table-sm min-w-[680px]">
+                <thead>
+                  <tr>
+                    <th className="w-10">Rg</th>
+                    <th>Assemblage &amp; mods</th>
+                    <th className="text-right w-24">Puissance</th>
+                    <th className="text-right w-16">Gain</th>
+                    <th className="w-40"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {powerRows.map((row, rank) => {
+                    const { pb, mods } = row;
+                    const modParts = mods
+                      .map((n, i) =>
+                        n > 0 ? `${n}×+10 ${statNames[i]}` : null
+                      )
+                      .filter(Boolean);
+                    return (
+                      <tr key={`${rank}-${pb.pieceIds.join(".")}`}>
+                        <th>{rank + 1}</th>
+                        <td>
+                          <div className="flex items-center gap-1">
+                            {pb.pieceIds.map((id) => {
+                              const p = pieceById.get(id);
+                              return p?.icon ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  key={id}
+                                  className={`w-7 h-7 rounded border border-base-300${
+                                    p.isExotic ? " !border-[#ceae33]" : ""
+                                  }`}
+                                  src={`${BUNGIE_ROOT}${p.icon}`}
+                                  alt={p.name}
+                                  title={p.name}
+                                />
+                              ) : null;
+                            })}
+                          </div>
+                          {modParts.length > 0 && (
+                            <div className="text-xs text-primary mt-1">
+                              🔧 {modParts.join(" · ")}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-right font-mono text-lg">
+                          ✦ {pb.totalPower}
+                        </td>
+                        <td className="text-right font-mono">
+                          {pb.totalPower > currentLight
+                            ? `+${pb.totalPower - currentLight}`
+                            : "—"}
+                        </td>
+                        <td className="text-right">
+                          <div className="flex flex-col gap-1 items-end">
+                            <button
+                              className="btn btn-xs btn-primary"
+                              disabled={busy || !targetChar}
+                              onClick={() => equipPowerBuild(row, true)}
+                            >
+                              Équiper + mods
+                            </button>
+                            <button
+                              className="btn btn-xs btn-ghost"
+                              disabled={busy || !targetChar}
+                              onClick={() => equipPowerBuild(row, false)}
+                            >
+                              sans mods
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {powerBuilds && powerBuilds.length === 0 && !powerError && (
+            <div role="alert" className="alert alert-info text-sm">
+              <span>
+                Tu es déjà à la Puissance maximale possible avec ton armure
+                actuelle.
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="collapse collapse-arrow bg-base-200 shadow">

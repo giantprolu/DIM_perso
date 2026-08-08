@@ -175,3 +175,96 @@ export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
 
   return results;
 }
+
+/**
+ * Optimisation « Puissance ».
+ *
+ * La Puissance affichée en jeu est floor(moyenne des 8 emplacements
+ * équipés) + un bonus (artefact saisonnier) constant. On ne touche pas aux
+ * armes (choix du joueur) : seule l'armure (5 emplacements, 1 exotique max)
+ * est réoptimisée pour maximiser la somme, ce qui maximise mécaniquement la
+ * moyenne des 8 — donc jamais moins que l'assemblage actuel, puisque les
+ * pièces actuellement équipées font partie des candidats.
+ */
+
+export interface PowerPiece {
+  id: string;
+  itemHash: number;
+  slot: number;
+  isExotic: boolean;
+  power: number;
+}
+
+export interface PowerBuild {
+  pieceIds: string[];
+  armorPower: number;
+  totalPower: number;
+}
+
+export interface PowerParams {
+  /** Pièces d'armure déjà filtrées sur la classe choisie */
+  armorPieces: PowerPiece[];
+  /** Somme des Puissances des 3 armes actuellement équipées (non modifiées) */
+  fixedWeaponPower: number;
+  /** currentLight − floor((fixedWeaponPower + puissance armure actuelle) / 8) */
+  offset: number;
+}
+
+export function computeBestPowerBuilds(params: PowerParams, topN = 5): PowerBuild[] {
+  const { armorPieces, fixedWeaponPower, offset } = params;
+
+  const perSlot = ARMOR_SLOT_ORDER.map((slotHash) =>
+    armorPieces.filter((p) => p.slot === slotHash).sort((a, b) => b.power - a.power)
+  );
+  if (perSlot.some((list) => list.length === 0)) return [];
+
+  const bestNonExotic = perSlot.map((list) => list.find((p) => !p.isExotic) ?? null);
+  const bestExotic = perSlot.map((list) => list.find((p) => p.isExotic) ?? null);
+
+  // Emplacement(s) sans aucune pièce légendaire : l'exotique y est obligatoire.
+  const forcedExoticSlots = bestNonExotic
+    .map((p, i) => (p === null ? i : -1))
+    .filter((i) => i >= 0);
+  if (forcedExoticSlots.length > 1) return []; // aucun assemblage légal possible
+
+  const forcedSlot = forcedExoticSlots[0] ?? -1;
+  if (forcedSlot >= 0 && bestExotic[forcedSlot] === null) return [];
+
+  const exoticChoices: number[] =
+    forcedSlot >= 0
+      ? [forcedSlot]
+      : [-1, ...bestExotic.map((p, i) => (p ? i : -1)).filter((i) => i >= 0)];
+
+  const seen = new Set<string>();
+  const results: PowerBuild[] = [];
+
+  for (const exoticSlot of exoticChoices) {
+    const pieces: PowerPiece[] = [];
+    let feasible = true;
+    for (let i = 0; i < 5; i++) {
+      const piece = i === exoticSlot ? bestExotic[i] : bestNonExotic[i];
+      if (!piece) {
+        feasible = false;
+        break;
+      }
+      pieces.push(piece);
+    }
+    if (!feasible) continue;
+
+    const key = pieces.map((p) => p.itemHash).join(".");
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const armorPower = pieces.reduce((a, p) => a + p.power, 0);
+    const totalPower = Math.floor((fixedWeaponPower + armorPower) / 8) + offset;
+
+    results.push({
+      pieceIds: pieces.map((p) => p.id),
+      armorPower,
+      totalPower,
+    });
+  }
+
+  results.sort((a, b) => b.totalPower - a.totalPower);
+  return results.slice(0, topN);
+}
