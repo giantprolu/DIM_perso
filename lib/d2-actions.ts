@@ -157,6 +157,11 @@ export interface StatModSocket {
 /**
  * Trouve l'emplacement de mod de stats d'une armure et les plugs +10
  * disponibles, en lisant les plug sets du manifest (aucun hash codé en dur).
+ *
+ * Un mod de stat porte plusieurs `investmentStats` : depuis Armure 3.0, la
+ * stat « coût en énergie » (3578062600) accompagne systématiquement la stat
+ * d'armure. On ne raisonne donc que sur les stats d'armure, et on exige un
+ * mod mono-stat pour écarter les mods de réglage (+5 / -5) et les chefs-d'œuvre.
  */
 export function findStatModSocket(
   defs: Defs,
@@ -174,13 +179,14 @@ export function findStatModSocket(
       const plugDef = defs.items[p.plugItemHash];
       const category = plugDef?.plug?.plugCategoryIdentifier ?? "";
       if (!category.startsWith("enhancements.")) continue;
-      const inv = plugDef?.investmentStats ?? [];
-      if (inv.length !== 1) continue;
-      const stat = inv[0];
-      if (stat.value === 10 && ARMOR_STAT_HASHES.includes(stat.statTypeHash)) {
-        if (!byStat.has(stat.statTypeHash)) {
-          byStat.set(stat.statTypeHash, p.plugItemHash);
-        }
+      const armorStats = (plugDef?.investmentStats ?? []).filter(
+        (s) =>
+          ARMOR_STAT_HASHES.includes(s.statTypeHash) && !s.isConditionallyActive
+      );
+      if (armorStats.length !== 1) continue;
+      const stat = armorStats[0];
+      if (stat.value === 10 && !byStat.has(stat.statTypeHash)) {
+        byStat.set(stat.statTypeHash, p.plugItemHash);
       }
     }
     if (byStat.size >= 3) return { socketIndex: index, byStat };
