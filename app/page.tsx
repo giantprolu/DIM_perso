@@ -12,6 +12,16 @@ const ERRORS: Record<string, string> = {
 
 const CARDS = [
   {
+    href: "/perso",
+    title: "Personnage",
+    desc: "Ton Gardien comme en jeu : armes à gauche, armure à droite — clique une pièce pour changer ses mods.",
+  },
+  {
+    href: "/mods",
+    title: "Optimiseur de mods",
+    desc: "Deux onglets séparés, armes et armure : choisis une stat, le site pose les meilleurs mods que tu possèdes.",
+  },
+  {
     href: "/quests",
     title: "Quêtes & progression",
     desc: "Poursuites, défis saisonniers et rangs de Gardien, avec la progression de chaque objectif.",

@@ -67,6 +67,26 @@ export const TIER_EXOTIC = 6;
 export const SOCKET_CATEGORY_WEAPON_PERKS = 4241085061;
 export const SOCKET_CATEGORY_WEAPON_MODS = 2685412949;
 
+/** Catégorie de sockets « Mods d'armure » */
+export const SOCKET_CATEGORY_ARMOR_MODS = 590099826;
+
+/**
+ * Stats d'arme sur lesquelles les mods peuvent jouer.
+ * L'ordre définit l'affichage ; les noms viennent du manifest.
+ */
+export const WEAPON_STAT_HASHES = [
+  1240592695, // Portée
+  155624089, // Stabilité
+  943549884, // Maniabilité
+  4188031367, // Vitesse de rechargement
+  1345609583, // Assistance à la visée
+  2714457168, // Efficacité aérienne
+  3871231066, // Chargeur
+];
+
+/** Préfixe des catégories de plugs correspondant aux mods amovibles d'armure */
+export const ARMOR_MOD_CATEGORY_PREFIX = "enhancements.";
+
 // DestinyRecordState (flags)
 export const RECORD_STATE_REDEEMED = 1;
 export const RECORD_STATE_OBJECTIVE_NOT_COMPLETED = 4;

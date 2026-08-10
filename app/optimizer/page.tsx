@@ -5,6 +5,7 @@ import { loadDefs } from "@/lib/manifest-client";
 import {
   ARMOR_BUCKETS,
   ARMOR_SLOT_ORDER,
+  WEAPON_SLOT_ORDER,
   ARMOR_STAT_HASHES,
   BUNGIE_ROOT,
   CLASS_NAMES,
@@ -41,6 +42,7 @@ import type {
 type Phase = "loading" | "ready" | "unauth" | "error";
 
 interface ArmorPiece extends EnginePiece {
+  power: number;
   name: string;
   icon?: string;
   classType: number;
@@ -91,6 +93,7 @@ export default function OptimizerPage() {
   const [minimums, setMinimums] = useState<number[]>([0, 0, 0, 0, 0, 0]);
   const [useBaseStats, setUseBaseStats] = useState(true);
   const [simulateMods, setSimulateMods] = useState(true);
+  const [keepPower, setKeepPower] = useState(true);
   const [builds, setBuilds] = useState<Build[] | null>(null);
   const [selBuild, setSelBuild] = useState(0);
   const detailRef = useRef<HTMLDivElement | null>(null);
@@ -139,6 +142,7 @@ export default function OptimizerPage() {
 
         const statsData = data.itemComponents?.stats?.data ?? {};
         const socketsData = data.itemComponents?.sockets?.data ?? {};
+        const instancesData = data.itemComponents?.instances?.data ?? {};
         const pool: ArmorPiece[] = [];
 
         for (const item of allItems) {
@@ -163,6 +167,8 @@ export default function OptimizerPage() {
             itemHash: item.itemHash,
             slot,
             isExotic: def.inventory?.tierType === TIER_EXOTIC,
+            power:
+              instancesData[item.itemInstanceId]?.primaryStat?.value ?? 0,
             stats: baseStats,
             displayedStats,
             baseStats,
@@ -228,6 +234,41 @@ export default function OptimizerPage() {
     () => characters.filter((c) => c.classType === selectedClass),
     [characters, selectedClass]
   );
+
+  /**
+   * Puissance d'équipement du personnage cible : moyenne des 8 objets
+   * équipés (3 armes + 5 pièces d'armure). C'est cette valeur que les
+   * assemblages ne doivent jamais faire baisser.
+   */
+  const powerContext = useMemo(() => {
+    const empty = { weaponsPower: 0, weaponsCount: 0, current: 0 };
+    if (!profile || !targetChar) return empty;
+    const equipped =
+      profile.characterEquipment?.data?.[targetChar]?.items ?? [];
+    const instances = profile.itemComponents?.instances?.data ?? {};
+    let weaponsPower = 0;
+    let weaponsCount = 0;
+    let armorPower = 0;
+    let armorCount = 0;
+    for (const item of equipped) {
+      if (!item.itemInstanceId) continue;
+      const power = instances[item.itemInstanceId]?.primaryStat?.value ?? 0;
+      if (power <= 0) continue;
+      if (WEAPON_SLOT_ORDER.includes(item.bucketHash)) {
+        weaponsPower += power;
+        weaponsCount++;
+      } else if (ARMOR_SLOT_ORDER.includes(item.bucketHash)) {
+        armorPower += power;
+        armorCount++;
+      }
+    }
+    const total = weaponsCount + armorCount;
+    return {
+      weaponsPower,
+      weaponsCount,
+      current: total > 0 ? Math.floor((weaponsPower + armorPower) / total) : 0,
+    };
+  }, [profile, targetChar]);
 
   useEffect(() => {
     if (classChars.length > 0) setTargetChar(classChars[0].characterId);
@@ -378,6 +419,9 @@ export default function OptimizerPage() {
         minimums,
         exoticHash: exoticHash === "none" ? null : Number(exoticHash),
         simulateMods,
+        otherGearPower: powerContext.weaponsPower,
+        otherGearCount: powerContext.weaponsCount,
+        minGearPower: keepPower ? powerContext.current : 0,
       });
       setBuilds(result);
       setComputing(false);
@@ -418,9 +462,16 @@ export default function OptimizerPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-semibold">Optimiseur d&apos;armure</h1>
-        <span className="badge badge-ghost">
-          {classPieces.length} pièces analysées
-        </span>
+        <div className="flex items-center gap-2">
+          {powerContext.current > 0 && (
+            <span className="badge badge-outline text-[#ffd970]">
+              ✦ {powerContext.current} actuel
+            </span>
+          )}
+          <span className="badge badge-ghost">
+            {classPieces.length} pièces analysées
+          </span>
+        </div>
       </div>
 
       <div className="collapse collapse-arrow bg-base-200 shadow">
@@ -587,6 +638,21 @@ export default function OptimizerPage() {
               </span>
             </label>
 
+            <label className="label cursor-pointer justify-start gap-3 py-1">
+              <input
+                type="checkbox"
+                checked={keepPower}
+                onChange={(e) => setKeepPower(e.target.checked)}
+                className="checkbox checkbox-primary checkbox-sm"
+              />
+              <span className="label-text text-sm">
+                Ne jamais baisser ma puissance
+                {powerContext.current > 0 && (
+                  <span className="text-[#ffd970]"> (✦ {powerContext.current})</span>
+                )}
+              </span>
+            </label>
+
             <button
               className="btn btn-primary btn-sm"
               onClick={run}
@@ -617,9 +683,17 @@ export default function OptimizerPage() {
           {builds !== null && !computing && builds.length === 0 && (
             <div role="alert" className="alert alert-warning text-sm">
               <span>
-                Aucun assemblage ne respecte ces minimums avec ton arsenal.
-                Assouplis les contraintes, active la simulation de mods ou
-                change d&apos;exotique.
+                Aucun assemblage ne passe les contraintes.
+                {keepPower && powerContext.current > 0 ? (
+                  <>
+                    {" "}
+                    Le plancher de puissance (✦ {powerContext.current}) est
+                    peut-être en cause : décoche « Ne jamais baisser ma
+                    puissance », ou monte d&apos;abord tes pièces au niveau.
+                  </>
+                ) : (
+                  " Assouplis les minimums, active la simulation de mods ou change d'exotique."
+                )}
               </span>
             </div>
           )}
@@ -650,6 +724,9 @@ export default function OptimizerPage() {
                             </th>
                           ))}
                           <th className="text-right w-16">Total</th>
+                          <th className="text-right w-16" title="Puissance d'équipement">
+                            ✦
+                          </th>
                           <th className="w-16"></th>
                         </tr>
                       </thead>
@@ -717,6 +794,15 @@ export default function OptimizerPage() {
                               ))}
                               <td className="text-right font-mono text-lg">
                                 {total}
+                              </td>
+                              <td
+                                className={`text-right font-mono ${
+                                  b.power >= powerContext.current
+                                    ? "text-[#ffd970]"
+                                    : "text-error"
+                                }`}
+                              >
+                                {b.power}
                               </td>
                               <td className="text-right">
                                 <button

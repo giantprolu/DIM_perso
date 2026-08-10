@@ -24,6 +24,8 @@ export interface EnginePiece {
   isExotic: boolean;
   /** 6 valeurs alignées sur ARMOR_STAT_HASHES */
   stats: number[];
+  /** Puissance de la pièce (primaryStat) */
+  power?: number;
 }
 
 export interface EngineParams {
@@ -37,6 +39,14 @@ export interface EngineParams {
   exoticHash: number | null;
   /** Simuler 5 mods de stats (+10 chacun) */
   simulateMods?: boolean;
+  /**
+   * Plancher de puissance : somme de puissance des objets hors armure
+   * (les 3 armes équipées) et puissance d'équipement à ne pas descendre
+   * sous peine d'écarter l'assemblage.
+   */
+  otherGearPower?: number;
+  otherGearCount?: number;
+  minGearPower?: number;
 }
 
 export interface Build {
@@ -45,6 +55,8 @@ export interface Build {
   /** Mods simulés par stat (nombre de +10), longueur 6 */
   mods: number[];
   score: number;
+  /** Puissance d'équipement résultante (armes équipées + cette armure) */
+  power: number;
 }
 
 const TRIM_MAIN = 22; // casque / gants / torse / jambes
@@ -59,7 +71,16 @@ function weightedScore(stats: number[], weights: number[]): number {
 }
 
 export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
-  const { pieces, weights, minimums, exoticHash, simulateMods } = params;
+  const {
+    pieces,
+    weights,
+    minimums,
+    exoticHash,
+    simulateMods,
+    otherGearPower = 0,
+    otherGearCount = 0,
+    minGearPower = 0,
+  } = params;
 
   const exoticSlot =
     exoticHash !== null
@@ -150,6 +171,23 @@ export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
               if (!ok) continue;
             }
 
+            // Plancher de puissance : ne jamais proposer un assemblage
+            // qui ferait baisser la puissance d'équipement.
+            const gearCount = otherGearCount + 5;
+            const buildPower =
+              gearCount > 0
+                ? Math.floor(
+                    (otherGearPower +
+                      (h.power ?? 0) +
+                      (g.power ?? 0) +
+                      (c.power ?? 0) +
+                      (l.power ?? 0) +
+                      (ci.power ?? 0)) /
+                      gearCount
+                  )
+                : 0;
+            if (minGearPower > 0 && buildPower < minGearPower) continue;
+
             const score = weightedScore(totals, weights);
             if (results.length >= topN && score <= worstKept) continue;
 
@@ -163,6 +201,7 @@ export function computeBestBuilds(params: EngineParams, topN = 10): Build[] {
               totals: [...totals],
               mods: [...mods],
               score,
+              power: buildPower,
             });
             results.sort((a, b) => b.score - a.score);
             if (results.length > topN) results.pop();

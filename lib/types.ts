@@ -24,11 +24,15 @@ export interface ItemDef {
     questLineName?: string;
   };
   objectives?: { objectiveHashes?: number[] };
-  plug?: { plugCategoryIdentifier?: string };
+  plug?: {
+    plugCategoryIdentifier?: string;
+    energyCost?: { energyCost: number; energyTypeHash?: number };
+  };
   investmentStats?: { statTypeHash: number; value: number }[];
   sockets?: {
     socketCategories?: { socketCategoryHash: number; socketIndexes: number[] }[];
     socketEntries?: {
+      socketTypeHash?: number;
       singleInitialItemHash?: number;
       reusablePlugSetHash?: number;
       randomizedPlugSetHash?: number;
@@ -171,6 +175,8 @@ export interface Character {
   classType: number;
   classHash: number;
   light: number;
+  /** Valeurs par hash de stat (les 6 stats d'armure + puissance) */
+  stats?: Record<string, number>;
   emblemPath?: string;
   emblemBackgroundPath?: string;
   dateLastPlayed: string;
@@ -192,6 +198,13 @@ export interface SocketState {
   plugHash?: number;
   isEnabled?: boolean;
   isVisible?: boolean;
+}
+
+/** Une option de mod proposée par Bungie pour un emplacement donné. */
+export interface AvailablePlug {
+  plugItemHash: number;
+  canInsert?: boolean;
+  enabled?: boolean;
 }
 
 export interface ProfileResponse {
@@ -235,6 +248,9 @@ export interface ProfileResponse {
     };
     sockets?: {
       data?: Record<string, { sockets: SocketState[] }>;
+    };
+    reusablePlugs?: {
+      data?: Record<string, { plugs?: Record<string, AvailablePlug[]> }>;
     };
   };
   characterUninstancedItemComponents?: Record<

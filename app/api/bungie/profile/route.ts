@@ -18,6 +18,8 @@ const SCOPES: Record<string, string> = {
   // 102 coffre, 205 équipé, 206 loadouts en jeu, 300 instances,
   // 304 stats, 305 sockets
   gear: "102,200,201,205,206,300,304,305",
+  // 205 équipé, 310 mods disponibles par emplacement (léger : équipé seul)
+  mods: "200,205,300,304,305,310",
 };
 
 export async function GET(request: NextRequest) {

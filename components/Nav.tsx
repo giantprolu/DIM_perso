@@ -7,8 +7,10 @@ import type { SessionInfo } from "@/lib/types";
 
 const LINKS = [
   { href: "/", label: "Tableau de bord" },
+  { href: "/perso", label: "Personnage" },
   { href: "/quests", label: "Quêtes" },
   { href: "/armes", label: "Armes" },
+  { href: "/mods", label: "Mods" },
   { href: "/optimizer", label: "Optimiseur" },
   { href: "/loadouts", label: "Loadouts" },
 ];
