@@ -28,7 +28,11 @@ export interface ItemDef {
     plugCategoryIdentifier?: string;
     energyCost?: { energyCost: number; energyTypeHash?: number };
   };
-  investmentStats?: { statTypeHash: number; value: number }[];
+  investmentStats?: {
+    statTypeHash: number;
+    value: number;
+    isConditionallyActive?: boolean;
+  }[];
   sockets?: {
     socketCategories?: { socketCategoryHash: number; socketIndexes: number[] }[];
     socketEntries?: {

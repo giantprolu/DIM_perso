@@ -70,7 +70,10 @@ export function plugEnergyCost(defs: Defs, plugHash: number): number {
 
 function statGain(defs: Defs, plugHash: number, statHash: number): number {
   const stats = defs.items[plugHash]?.investmentStats ?? [];
-  return stats.find((s) => s.statTypeHash === statHash)?.value ?? 0;
+  return (
+    stats.find((s) => s.statTypeHash === statHash && !s.isConditionallyActive)
+      ?.value ?? 0
+  );
 }
 
 /** Options réellement disponibles pour un emplacement donné. */
@@ -110,7 +113,9 @@ function optionsFor(
     const def = defs.items[hash];
     if (!def || isEmptyPlug(defs, hash)) continue;
     const effects = (def.investmentStats ?? [])
-      .filter((s) => relevantStats.includes(s.statTypeHash))
+      .filter(
+        (s) => relevantStats.includes(s.statTypeHash) && !s.isConditionallyActive
+      )
       .map((s) => ({ statHash: s.statTypeHash, value: s.value }));
     options.push({
       hash,
@@ -239,7 +244,7 @@ export const ARMOR_MOD_CATEGORY = SOCKET_CATEGORY_ARMOR_MODS;
 export function isArmorStatMod(defs: Defs, plugHash: number): boolean {
   const category = defs.items[plugHash]?.plug?.plugCategoryIdentifier ?? "";
   if (!category.startsWith(ARMOR_MOD_CATEGORY_PREFIX)) return false;
-  return (defs.items[plugHash]?.investmentStats ?? []).some((s) =>
-    ARMOR_STAT_HASHES.includes(s.statTypeHash)
+  return (defs.items[plugHash]?.investmentStats ?? []).some(
+    (s) => ARMOR_STAT_HASHES.includes(s.statTypeHash) && !s.isConditionallyActive
   );
 }
