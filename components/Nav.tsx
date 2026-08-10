@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/perso", label: "Personnage" },
   { href: "/quests", label: "Quêtes" },
   { href: "/armes", label: "Armes" },
+  { href: "/postmaster", label: "Postes" },
   { href: "/mods", label: "Mods" },
   { href: "/optimizer", label: "Optimiseur" },
   { href: "/loadouts", label: "Loadouts" },

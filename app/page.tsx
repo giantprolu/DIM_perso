@@ -22,6 +22,11 @@ const CARDS = [
     desc: "Deux onglets séparés, armes et armure : choisis une stat, le site pose les meilleurs mods que tu possèdes.",
   },
   {
+    href: "/postmaster",
+    title: "Maître des postes",
+    desc: "Tout ce qui t'attend, sur tous tes personnages — récupérable en un clic ou automatiquement.",
+  },
+  {
     href: "/quests",
     title: "Quêtes & progression",
     desc: "Poursuites, défis saisonniers et rangs de Gardien, avec la progression de chaque objectif.",

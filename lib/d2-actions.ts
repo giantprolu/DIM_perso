@@ -40,6 +40,14 @@ export const insertPlug = (p: {
   plugItemHash: number;
 }) => apiPost("/api/d2/insert-plug", p);
 
+/** Récupère un objet au maître des postes. */
+export const pullFromPostmaster = (p: {
+  itemReferenceHash: number;
+  itemId?: string;
+  characterId: string;
+  stackSize?: number;
+}) => apiPost("/api/d2/postmaster", p);
+
 export const loadoutAction = (p: {
   action: "snapshot" | "equip" | "clear" | "rename";
   loadoutIndex: number;
