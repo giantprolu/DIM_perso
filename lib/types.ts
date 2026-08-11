@@ -19,6 +19,8 @@ export interface ItemDef {
     tierTypeName?: string;
   };
   defaultDamageTypeHash?: number;
+  screenshot?: string;
+  flavorText?: string;
   setData?: {
     itemList?: { itemHash: number }[];
     questLineName?: string;

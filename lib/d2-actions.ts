@@ -40,6 +40,20 @@ export const insertPlug = (p: {
   plugItemHash: number;
 }) => apiPost("/api/d2/insert-plug", p);
 
+/** Pointe (suit) ou dépointe une quête. */
+export const setTracked = (p: {
+  state: boolean;
+  itemId: string;
+  characterId: string;
+}) => apiPost("/api/d2/item-state", { action: "track", ...p });
+
+/** Verrouille ou déverrouille un objet. */
+export const setLocked = (p: {
+  state: boolean;
+  itemId: string;
+  characterId: string;
+}) => apiPost("/api/d2/item-state", { action: "lock", ...p });
+
 /** Récupère un objet au maître des postes. */
 export const pullFromPostmaster = (p: {
   itemReferenceHash: number;

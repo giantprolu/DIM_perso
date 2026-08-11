@@ -40,7 +40,7 @@ interface Plan {
   totalGain: number;
 }
 
-export default function ModsPage() {
+export default function ModsPanel() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [statusMsg, setStatusMsg] = useState("Chargement…");
   const [error, setError] = useState("");
@@ -258,13 +258,6 @@ export default function ModsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-baseline justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold">Optimiseur de mods</h1>
-        <span className="badge badge-ghost">
-          {tab === "weapons" ? "Armes équipées" : "Armure équipée"}
-        </span>
-      </div>
-
       <div className="flex gap-2.5 flex-wrap">
         {characters.map((c) => (
           <button

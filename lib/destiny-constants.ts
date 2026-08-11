@@ -87,6 +87,13 @@ export const WEAPON_STAT_HASHES = [
 /** Préfixe des catégories de plugs correspondant aux mods amovibles d'armure */
 export const ARMOR_MOD_CATEGORY_PREFIX = "enhancements.";
 
+// DestinyItemState (flags)
+export const ITEM_STATE_LOCKED = 1;
+export const ITEM_STATE_TRACKED = 2;
+export const ITEM_STATE_MASTERWORK = 4;
+export const ITEM_STATE_CRAFTED = 8;
+export const ITEM_STATE_HIGHLIGHTED_OBJECTIVE = 16;
+
 // DestinyRecordState (flags)
 export const RECORD_STATE_REDEEMED = 1;
 export const RECORD_STATE_OBJECTIVE_NOT_COMPLETED = 4;

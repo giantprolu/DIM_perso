@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import {
   BUCKET_PURSUITS,
@@ -9,9 +9,11 @@ import {
   ITEM_TYPE_BOUNTY,
   ITEM_TYPE_QUEST,
   ITEM_TYPE_QUEST_STEP,
+  ITEM_STATE_TRACKED,
   RECORD_STATE_OBJECTIVE_NOT_COMPLETED,
   RECORD_STATE_REDEEMED,
 } from "@/lib/destiny-constants";
+import { setTracked } from "@/lib/d2-actions";
 import type {
   Character,
   Defs,
@@ -22,10 +24,12 @@ import type {
 
 type Phase = "loading" | "ready" | "unauth" | "error";
 type Section = "pursuits" | "seasonal" | "ranks";
-type PursuitTab = "all" | "quests" | "bounties";
+type PursuitTab = "all" | "tracked" | "quests" | "bounties";
 
 interface PursuitVM {
   key: string;
+  instanceId?: string;
+  tracked: boolean;
   name: string;
   typeName: string;
   description: string;
@@ -146,6 +150,8 @@ export default function QuestsPage() {
   const [filter, setFilter] = useState("");
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [trackBusy, setTrackBusy] = useState(false);
+  const [trackError, setTrackError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +189,28 @@ export default function QuestsPage() {
     };
   }, []);
 
+  /** Pointe/dépointe une quête en jeu, puis rafraîchit le profil. */
+  async function toggleTrack(p: PursuitVM) {
+    if (!p.instanceId || trackBusy) return;
+    setTrackBusy(true);
+    setTrackError("");
+    try {
+      await setTracked({
+        state: !p.tracked,
+        itemId: p.instanceId,
+        characterId: selectedChar,
+      });
+      const res = await fetch("/api/bungie/profile?scope=quests");
+      if (res.ok) setProfile((await res.json()) as ProfileResponse);
+    } catch (e) {
+      setTrackError(
+        e instanceof Error ? e.message : "Impossible de modifier le pointage."
+      );
+    } finally {
+      setTrackBusy(false);
+    }
+  }
+
   const characters: Character[] = useMemo(() => {
     const chars = Object.values(profile?.characters?.data ?? {});
     return chars.sort(
@@ -215,6 +243,8 @@ export default function QuestsPage() {
 
       list.push({
         key: item.itemInstanceId ?? `${item.itemHash}`,
+        instanceId: item.itemInstanceId,
+        tracked: ((item.state ?? 0) & ITEM_STATE_TRACKED) !== 0,
         name: def?.redacted
           ? "Classifié"
           : def?.displayProperties?.name || `Objet ${item.itemHash}`,
@@ -234,6 +264,8 @@ export default function QuestsPage() {
 
     list.sort((a, b) => {
       if (a.complete !== b.complete) return a.complete ? 1 : -1;
+      // Comme en jeu : les quêtes pointées remontent en tête
+      if (a.tracked !== b.tracked) return a.tracked ? -1 : 1;
       return a.name.localeCompare(b.name, "fr");
     });
     return list;
@@ -242,6 +274,7 @@ export default function QuestsPage() {
   const shownPursuits = useMemo(() => {
     const f = filter.trim().toLowerCase();
     return pursuits.filter((p) => {
+      if (pursuitTab === "tracked" && !p.tracked) return false;
       if (pursuitTab === "quests" && !p.isQuest) return false;
       if (pursuitTab === "bounties" && !p.isBounty) return false;
       if (hideCompleted && p.complete) return false;
@@ -329,15 +362,18 @@ export default function QuestsPage() {
 
   const currentRank = profile?.profile?.data?.currentGuardianRank ?? 0;
 
+  // Présélection du rang cible = rang actuel + 1. On attend que le profil
+  // soit réellement chargé (currentRank > 0), sinon on figerait le rang 1.
+  const rankInitialized = useRef(false);
   useEffect(() => {
-    if (selectedRank === null && ranks.length > 0) {
-      const next =
-        ranks.find((r) => r.rankNumber === currentRank + 1) ??
-        ranks.find((r) => r.rankNumber === currentRank) ??
-        ranks[0];
-      setSelectedRank(next.rankNumber);
-    }
-  }, [ranks, currentRank, selectedRank]);
+    if (rankInitialized.current || ranks.length === 0 || currentRank <= 0) return;
+    const next =
+      ranks.find((r) => r.rankNumber === currentRank + 1) ??
+      ranks.find((r) => r.rankNumber === currentRank) ??
+      ranks[0];
+    rankInitialized.current = true;
+    setSelectedRank(next.rankNumber);
+  }, [ranks, currentRank]);
 
   const rankRecords: RecordVM[] = useMemo(() => {
     if (!defs || selectedRank === null) return [];
@@ -369,6 +405,8 @@ export default function QuestsPage() {
     description,
     objectives,
     complete,
+    tracked,
+    onToggleTrack,
   }: {
     icon?: string;
     title: string;
@@ -377,11 +415,15 @@ export default function QuestsPage() {
     description?: string;
     objectives: ObjectiveProgress[];
     complete: boolean;
+    tracked?: boolean;
+    onToggleTrack?: () => void;
   }) {
     const pct = complete ? 100 : overallPct(objectives, defs);
     return (
       <div
-        className={`card card-side bg-base-200 shadow${complete ? " opacity-60" : ""}`}
+        className={`card card-side bg-base-200 shadow${complete ? " opacity-60" : ""}${
+          tracked ? " ring-1 ring-primary/60" : ""
+        }`}
       >
         <div className="card-body p-4">
           <div className="flex items-start gap-4">
@@ -393,6 +435,7 @@ export default function QuestsPage() {
             )}
             <div className="min-w-0 flex-1">
               <h2 className="card-title text-base gap-2 flex-wrap">
+                {tracked && <span title="Pointée en jeu">📌</span>}
                 <span className="truncate">{title}</span>
                 {complete && (
                   <span className="badge badge-sm badge-success">terminé</span>
@@ -417,6 +460,22 @@ export default function QuestsPage() {
                 ))}
               </div>
             </div>
+            {onToggleTrack && (
+              <button
+                className={`btn btn-xs flex-none ${
+                  tracked ? "btn-primary" : "btn-ghost"
+                }`}
+                title={
+                  tracked
+                    ? "Ne plus pointer cette quête en jeu"
+                    : "Pointer cette quête en jeu"
+                }
+                onClick={onToggleTrack}
+                disabled={trackBusy}
+              >
+                📌
+              </button>
+            )}
             {objectives.length > 0 && (
               <div
                 className={`radial-progress flex-none text-xs font-mono ${
@@ -518,6 +577,12 @@ export default function QuestsPage() {
         ))}
       </div>
 
+      {trackError && (
+        <div role="alert" className="alert alert-warning text-sm">
+          <span>{trackError}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* ── Panneau latéral ── */}
         <div className="card bg-base-200 shadow">
@@ -547,6 +612,7 @@ export default function QuestsPage() {
                 {(
                   [
                     ["all", "Tout"],
+                    ["tracked", "📌 Pointées"],
                     ["quests", "Quêtes"],
                     ["bounties", "Primes"],
                   ] as [PursuitTab, string][]
@@ -573,7 +639,11 @@ export default function QuestsPage() {
                 {ranks.map((r) => (
                   <option key={r.hash} value={r.rankNumber}>
                     Rang {r.rankNumber} — {r.displayProperties?.name}
-                    {r.rankNumber === currentRank ? " (actuel)" : ""}
+                    {r.rankNumber === currentRank
+                      ? " (actuel)"
+                      : r.rankNumber === currentRank + 1
+                        ? " ★ cible"
+                        : ""}
                   </option>
                 ))}
               </select>
@@ -635,6 +705,10 @@ export default function QuestsPage() {
                   description={p.description}
                   objectives={p.objectives}
                   complete={p.complete}
+                  tracked={p.tracked}
+                  onToggleTrack={
+                    p.instanceId ? () => toggleTrack(p) : undefined
+                  }
                 />
               ))
             ))}

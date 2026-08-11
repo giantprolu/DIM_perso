@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
+import ModsPanel from "@/components/ModsPanel";
 import {
   ARMOR_BUCKETS,
   ARMOR_SLOT_ORDER,
@@ -176,6 +177,7 @@ export default function OptimizerPage() {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [saveAsLoadout, setSaveAsLoadout] = useState(true);
+  const [mainTab, setMainTab] = useState<"builds" | "mods">("builds");
 
   useEffect(() => {
     let cancelled = false;
@@ -612,7 +614,7 @@ export default function OptimizerPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-semibold">Optimiseur d&apos;armure</h1>
+        <h1 className="text-2xl font-semibold">Optimiseur</h1>
         <div className="flex items-center gap-2">
           {powerContext.current > 0 && (
             <span className="badge badge-outline text-[#ffd970]">
@@ -625,6 +627,27 @@ export default function OptimizerPage() {
         </div>
       </div>
 
+      <div role="tablist" className="tabs tabs-boxed w-fit">
+        <a
+          role="tab"
+          className={`tab${mainTab === "builds" ? " tab-active" : ""}`}
+          onClick={() => setMainTab("builds")}
+        >
+          🛡️ Assemblages &amp; puissance
+        </a>
+        <a
+          role="tab"
+          className={`tab${mainTab === "mods" ? " tab-active" : ""}`}
+          onClick={() => setMainTab("mods")}
+        >
+          🔧 Mods
+        </a>
+      </div>
+
+      {mainTab === "mods" && <ModsPanel />}
+
+      {mainTab === "builds" && (
+      <>
       <div className="card bg-base-200 shadow border border-primary/30">
         <div className="card-body gap-3">
           <div className="flex items-baseline justify-between flex-wrap gap-2">
@@ -1251,6 +1274,8 @@ export default function OptimizerPage() {
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

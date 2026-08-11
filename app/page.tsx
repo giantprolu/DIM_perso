@@ -17,11 +17,6 @@ const CARDS = [
     desc: "Ton Gardien comme en jeu : armes à gauche, armure à droite — clique une pièce pour changer ses mods.",
   },
   {
-    href: "/mods",
-    title: "Optimiseur de mods",
-    desc: "Deux onglets séparés, armes et armure : choisis une stat, le site pose les meilleurs mods que tu possèdes.",
-  },
-  {
     href: "/postmaster",
     title: "Maître des postes",
     desc: "Tout ce qui t'attend, sur tous tes personnages — récupérable en un clic ou automatiquement.",
@@ -39,7 +34,7 @@ const CARDS = [
   {
     href: "/optimizer",
     title: "Optimiseur d'armure",
-    desc: "Les meilleurs assemblages selon tes priorités, équipables en un clic.",
+    desc: "Assemblages, puissance maximale et mods d'armes/d'armure — tout au même endroit.",
   },
   {
     href: "/loadouts",
