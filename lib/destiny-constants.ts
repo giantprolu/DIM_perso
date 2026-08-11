@@ -62,6 +62,7 @@ export const ITEM_TYPE_BOUNTY = 26;
 
 // TierType
 export const TIER_EXOTIC = 6;
+export const TIER_LEGENDARY = 5;
 
 // Catégories de sockets (DestinySocketCategoryDefinition)
 export const SOCKET_CATEGORY_WEAPON_PERKS = 4241085061;

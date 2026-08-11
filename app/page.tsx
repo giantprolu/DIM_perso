@@ -17,6 +17,11 @@ const CARDS = [
     desc: "Ton Gardien comme en jeu : armes à gauche, armure à droite — clique une pièce pour changer ses mods.",
   },
   {
+    href: "/marchands",
+    title: "Marchands",
+    desc: "Ce qui vaut vraiment le détour aujourd'hui, où trouver le marchand et ce que ça coûte.",
+  },
+  {
     href: "/postmaster",
     title: "Maître des postes",
     desc: "Tout ce qui t'attend, sur tous tes personnages — récupérable en un clic ou automatiquement.",

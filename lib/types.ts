@@ -21,6 +21,7 @@ export interface ItemDef {
   defaultDamageTypeHash?: number;
   screenshot?: string;
   flavorText?: string;
+  collectibleHash?: number;
   setData?: {
     itemList?: { itemHash: number }[];
     questLineName?: string;
@@ -126,6 +127,34 @@ export interface LoadoutConstantsDef {
   loadoutCountPerCharacter?: number;
 }
 
+export interface VendorDef {
+  hash: number;
+  displayProperties?: {
+    name?: string;
+    description?: string;
+    icon?: string;
+    subtitle?: string;
+    largeIcon?: string;
+  };
+  vendorPortrait?: string;
+  vendorBanner?: string;
+  enabled?: boolean;
+  visible?: boolean;
+  locations?: { destinationHash: number; backgroundImagePath?: string }[];
+  displayItemHash?: number;
+}
+
+export interface DestinationDef {
+  hash: number;
+  displayProperties?: { name?: string; description?: string };
+  placeHash?: number;
+}
+
+export interface PlaceDef {
+  hash: number;
+  displayProperties?: { name?: string };
+}
+
 export interface GuardianRankDef {
   hash: number;
   displayProperties: DisplayProperties;
@@ -149,6 +178,9 @@ export interface Defs {
   loadoutIcons: Record<string, LoadoutIconDef>;
   loadoutColors: Record<string, LoadoutColorDef>;
   loadoutConstants: Record<string, LoadoutConstantsDef>;
+  vendors: Record<string, VendorDef>;
+  destinations: Record<string, DestinationDef>;
+  places: Record<string, PlaceDef>;
 }
 
 // ---- Profil ----
@@ -200,6 +232,65 @@ export interface InGameLoadout {
   items?: InGameLoadoutItem[];
 }
 
+export interface ItemQuantity {
+  itemHash: number;
+  quantity: number;
+}
+
+export interface VendorSaleItem {
+  vendorItemIndex: number;
+  itemHash: number;
+  quantity: number;
+  saleStatus: number;
+  costs?: ItemQuantity[];
+  apiPurchasable?: boolean;
+  overrideNextRefreshDate?: string;
+}
+
+export interface VendorComponent {
+  vendorHash: number;
+  vendorLocationIndex?: number;
+  nextRefreshDate?: string;
+  enabled?: boolean;
+  canPurchase?: boolean;
+  progression?: {
+    progressionHash?: number;
+    level?: number;
+    progressToNextLevel?: number;
+    nextLevelAt?: number;
+  };
+}
+
+export interface VendorsResponse {
+  vendors?: { data?: Record<string, VendorComponent> };
+  sales?: {
+    data?: Record<string, { saleItems?: Record<string, VendorSaleItem> }>;
+  };
+  itemComponents?: Record<
+    string,
+    {
+      instances?: {
+        data?: Record<
+          string,
+          {
+            primaryStat?: { value: number };
+            damageTypeHash?: number;
+            energy?: { energyCapacity?: number; energyUsed?: number };
+          }
+        >;
+      };
+      stats?: {
+        data?: Record<
+          string,
+          { stats?: Record<string, { statHash: number; value: number }> }
+        >;
+      };
+      sockets?: { data?: Record<string, { sockets: SocketState[] }> };
+    }
+  >;
+  error?: string;
+}
+
 export interface SocketState {
   plugHash?: number;
   isEnabled?: boolean;
@@ -226,6 +317,10 @@ export interface ProfileResponse {
   characterEquipment?: { data?: Record<string, { items: ProfileItem[] }> };
   profileInventory?: { data?: { items: ProfileItem[] } };
   profileRecords?: { data?: { records?: Record<string, RecordComponent> } };
+  profileCollectibles?: {
+    data?: { collectibles?: Record<string, { state: number }> };
+  };
+  profileCurrencies?: { data?: { items: ProfileItem[] } };
   characterLoadouts?: {
     data?: Record<string, { loadouts?: InGameLoadout[] }>;
   };

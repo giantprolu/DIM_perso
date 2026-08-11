@@ -19,6 +19,7 @@ import {
   transferItem,
   type ItemLocation,
 } from "@/lib/d2-actions";
+import { findDuplicates, type DuplicateGroup } from "@/lib/item-detail";
 import type {
   Character,
   Defs,
@@ -64,6 +65,7 @@ export default function WeaponsPage() {
   const [slotFilter, setSlotFilter] = useState<string>("all");
   const [damageFilter, setDamageFilter] = useState<string>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
+  const [showDuplicates, setShowDuplicates] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -285,6 +287,16 @@ export default function WeaponsPage() {
     return [...m.entries()];
   }, [weapons]);
 
+  /**
+   * Exemplaires multiples d'une même arme. L'API Bungie n'expose aucune
+   * action de fusion ou de montée de palier : cette vue sert à repérer
+   * quoi fusionner ou démanteler, l'opération se fait en jeu.
+   */
+  const duplicates: DuplicateGroup[] = useMemo(() => {
+    if (!defs || !profile) return [];
+    return findDuplicates(defs, profile, ITEM_TYPE_WEAPON);
+  }, [defs, profile]);
+
   const shown = useMemo(() => {
     const f = filter.trim().toLowerCase();
     return weapons.filter((w) => {
@@ -421,6 +433,13 @@ export default function WeaponsPage() {
           <option value="exotic">Exotiques</option>
           <option value="legendary">Non exotiques</option>
         </select>
+        <button
+          className={`btn btn-sm ${showDuplicates ? "btn-primary" : "btn-outline"}`}
+          onClick={() => setShowDuplicates((v) => !v)}
+          title="Armes détenues en plusieurs exemplaires"
+        >
+          Doublons ({duplicates.length})
+        </button>
         <input
           className="input input-bordered input-sm w-64"
           placeholder="Filtrer par nom, type, perk…"
@@ -428,6 +447,64 @@ export default function WeaponsPage() {
           onChange={(e) => setFilter(e.target.value)}
         />
       </div>
+
+      {showDuplicates && (
+        <div className="card bg-base-200 shadow">
+          <div className="card-body p-4 gap-3">
+            <h2 className="card-title text-base">
+              Exemplaires multiples
+              <span className="badge badge-sm badge-ghost">
+                {duplicates.length} armes
+              </span>
+            </h2>
+            <p className="text-xs opacity-60">
+              À fusionner ou démanteler <strong>en jeu</strong> : l&apos;API
+              Bungie n&apos;expose aucune action de fusion ou de palier. Le plus
+              puissant de chaque groupe est listé en premier ; 🔒 = verrouillé.
+            </p>
+            {duplicates.length === 0 ? (
+              <span className="text-sm opacity-60">
+                Aucun doublon détecté.
+              </span>
+            ) : (
+              <div className="flex flex-col gap-1.5 max-h-96 overflow-y-auto">
+                {duplicates.map((g) => (
+                  <div
+                    key={g.itemHash}
+                    className="flex items-center gap-3 bg-base-300 rounded-box px-3 py-2"
+                  >
+                    {g.icon && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        className={`item-icon !w-9 !h-9${g.isExotic ? " exotic" : ""}`}
+                        src={`${BUNGIE_ROOT}${g.icon}`}
+                        alt=""
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">
+                        {g.name}
+                      </div>
+                      <div className="text-[11px] opacity-50">{g.typeName}</div>
+                    </div>
+                    <span className="badge badge-sm badge-warning">
+                      ×{g.copies.length}
+                    </span>
+                    <div className="flex gap-1.5 text-xs font-mono opacity-70">
+                      {g.copies.map((c) => (
+                        <span key={c.instanceId}>
+                          {c.power || "—"}
+                          {c.locked ? "🔒" : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="card bg-base-200 shadow">
         <div className="card-body p-2">

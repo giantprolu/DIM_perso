@@ -24,6 +24,9 @@ const SCOPES: Record<string, string> = {
   perso: "102,200,201,205,300,304,305,310",
   // Maître des postes : inventaires de personnage + instances (puissance)
   postmaster: "200,201,300",
+  // Marchands : ce que tu possèdes déjà (800 collections), tes devises
+  // (103) et ton équipement, pour juger l'intérêt d'un objet en vente
+  vendorContext: "102,103,200,201,205,300,304,800",
 };
 
 export async function GET(request: NextRequest) {

@@ -11,8 +11,10 @@ const LINKS = [
   { href: "/quests", label: "Quêtes" },
   { href: "/armes", label: "Armes" },
   { href: "/postmaster", label: "Postes" },
+  { href: "/marchands", label: "Marchands" },
   { href: "/optimizer", label: "Optimiseur" },
   { href: "/loadouts", label: "Loadouts" },
+  { href: "/clan", label: "Clan" },
 ];
 
 export default function Nav() {

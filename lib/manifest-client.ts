@@ -31,6 +31,9 @@ const TABLES = [
   "DestinyLoadoutIconDefinition",
   "DestinyLoadoutColorDefinition",
   "DestinyLoadoutConstantsDefinition",
+  "DestinyVendorDefinition",
+  "DestinyDestinationDefinition",
+  "DestinyPlaceDefinition",
 ] as const;
 
 /** Change quand la liste des tables évolue → invalide les caches. */
@@ -149,6 +152,9 @@ export async function loadDefs(onProgress: (msg: string) => void): Promise<Defs>
       loadoutIcons: tables["DestinyLoadoutIconDefinition"],
       loadoutColors: tables["DestinyLoadoutColorDefinition"],
       loadoutConstants: tables["DestinyLoadoutConstantsDefinition"],
+      vendors: tables["DestinyVendorDefinition"],
+      destinations: tables["DestinyDestinationDefinition"],
+      places: tables["DestinyPlaceDefinition"],
     } as Defs;
 
     memoryCache = { schema: SCHEMA, defs };
