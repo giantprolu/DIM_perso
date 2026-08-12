@@ -24,6 +24,9 @@ const SCOPES: Record<string, string> = {
   perso: "102,200,201,205,300,304,305,310",
   // Maître des postes : inventaires de personnage + instances (puissance)
   postmaster: "200,201,300",
+  // Équipement porté + sockets + mods réellement insérables (310) :
+  // source de vérité pour poser un mod sur une instance précise
+  equipped: "200,205,300,304,305,310",
   // Marchands : ce que tu possèdes déjà (800 collections), tes devises
   // (103) et ton équipement, pour juger l'intérêt d'un objet en vente
   vendorContext: "102,103,200,201,205,300,304,800",

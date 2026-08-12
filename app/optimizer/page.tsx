@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import ModsPanel from "@/components/ModsPanel";
+import { findStatModForInstance } from "@/lib/mod-engine";
 import {
   ARMOR_BUCKETS,
   ARMOR_SLOT_ORDER,
@@ -26,6 +27,7 @@ import {
   buildLocationMap,
   equipItems,
   findStatModSocket,
+
   insertPlug,
   moveToCharacter,
   sleep,
@@ -395,69 +397,107 @@ export default function OptimizerPage() {
         b.mods.forEach((n, i) => {
           for (let k = 0; k < n; k++) flat.push(ARMOR_STAT_HASHES[i]);
         });
-        // On note ce qu'on croit avoir posé, pour le vérifier ensuite
-        const posed: {
-          instanceId: string;
-          socketIndex: number;
-          plugHash: number;
-          label: string;
-        }[] = [];
 
-        for (const id of b.pieceIds) {
-          if (flat.length === 0) break;
-          const piece = pieceById.get(id);
-          if (!piece) continue;
-          const socket = findStatModSocket(defs, piece.itemHash);
-          const statHash = flat[0];
-          const plugHash = socket?.byStat.get(statHash);
-          if (!socket || !plugHash) {
-            pushLog(
-              `⚠️ ${piece.name} : emplacement de mod de stats introuvable.`
-            );
-            continue;
-          }
-          flat.shift();
-          const statName =
-            defs.stats[statHash]?.displayProperties?.name ?? "stat";
-          try {
-            await insertPlug({
-              itemId: id,
-              characterId: targetChar,
-              socketIndex: socket.socketIndex,
-              plugItemHash: plugHash,
-            });
-            posed.push({
+        /*
+         * Bungie refuse d'écrire sur un objet dont l'état vient de changer
+         * (« Refresh the item and try again »). On laisse l'équipement se
+         * propager, puis on repart d'un profil frais incluant le composant
+         * 310 : c'est lui qui dit quels mods CE joueur peut poser sur CET
+         * objet, au lieu de deviner depuis le manifest.
+         */
+        pushLog("⏳ Rafraîchissement de l'équipement avant la pose des mods…");
+        await sleep(1200);
+        const modsRes = await fetch("/api/bungie/profile?scope=equipped");
+        if (!modsRes.ok) {
+          pushLog("⚠️ Profil illisible : pose des mods abandonnée.");
+        } else {
+          const modsData = (await modsRes.json()) as ProfileResponse;
+          const posed: {
+            instanceId: string;
+            socketIndex: number;
+            plugHash: number;
+            label: string;
+          }[] = [];
+          const usedByItem = new Map<string, Set<number>>();
+
+          for (const id of b.pieceIds) {
+            if (flat.length === 0) break;
+            const piece = pieceById.get(id);
+            if (!piece) continue;
+            const statHash = flat[0];
+            const statName =
+              defs.stats[statHash]?.displayProperties?.name ?? "stat";
+
+            const used = usedByItem.get(id) ?? new Set<number>();
+            const found = findStatModForInstance({
+              defs,
+              data: modsData,
               instanceId: id,
-              socketIndex: socket.socketIndex,
-              plugHash,
-              label: `+10 ${statName} sur ${piece.name}`,
+              itemHash: piece.itemHash,
+              statHash,
+              usedSockets: used,
             });
-            await sleep(350);
-          } catch (e) {
-            pushLog(
-              `⚠️ ${piece.name} : mod refusé (${e instanceof Error ? e.message : "énergie insuffisante ?"})`
-            );
-          }
-        }
-
-        // Bungie peut accepter l'appel sans que le mod tienne : on relit.
-        if (posed.length > 0) {
-          const checkRes = await fetch("/api/bungie/profile?scope=gear");
-          if (checkRes.ok) {
-            const checkData = (await checkRes.json()) as ProfileResponse;
-            const socketsData = checkData.itemComponents?.sockets?.data ?? {};
-            let ok = 0;
-            for (const p of posed) {
-              const actual =
-                socketsData[p.instanceId]?.sockets?.[p.socketIndex]?.plugHash;
-              if (actual === p.plugHash) ok++;
-              else pushLog(`⚠️ ${p.label} : non posé en jeu.`);
+            if (!found) {
+              pushLog(
+                `⚠️ ${piece.name} : aucun mod ${statName} posable (non débloqué ou emplacement occupé).`
+              );
+              flat.shift();
+              continue;
             }
-            pushLog(
-              ok === posed.length
-                ? `🔧 ${ok} mods confirmés en jeu.`
-                : `🔧 ${ok}/${posed.length} mods confirmés en jeu.`
-            );
+            flat.shift();
+            used.add(found.socketIndex);
+            usedByItem.set(id, used);
+
+            let done = false;
+            for (let attempt = 0; attempt < 2 && !done; attempt++) {
+              try {
+                await insertPlug({
+                  itemId: id,
+                  characterId: targetChar,
+                  socketIndex: found.socketIndex,
+                  plugItemHash: found.plugHash,
+                });
+                done = true;
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : "refusé";
+                if (attempt === 0) {
+                  await sleep(900); // l'objet était encore « frais »
+                } else {
+                  pushLog(`⚠️ ${piece.name} · ${found.name} : ${msg}`);
+                }
+              }
+            }
+            if (done) {
+              posed.push({
+                instanceId: id,
+                socketIndex: found.socketIndex,
+                plugHash: found.plugHash,
+                label: `${found.name} sur ${piece.name}`,
+              });
+              await sleep(500);
+            }
+          }
+
+          // Bungie accepte parfois l'appel sans que le mod tienne : on relit.
+          if (posed.length > 0) {
+            await sleep(1200);
+            const checkRes = await fetch("/api/bungie/profile?scope=equipped");
+            if (checkRes.ok) {
+              const checkData = (await checkRes.json()) as ProfileResponse;
+              const socketsData = checkData.itemComponents?.sockets?.data ?? {};
+              let ok = 0;
+              for (const p of posed) {
+                const actual =
+                  socketsData[p.instanceId]?.sockets?.[p.socketIndex]?.plugHash;
+                if (actual === p.plugHash) ok++;
+                else pushLog(`⚠️ ${p.label} : non posé en jeu.`);
+              }
+              pushLog(
+                ok === posed.length
+                  ? `🔧 ${ok} mods confirmés en jeu.`
+                  : `🔧 ${ok}/${posed.length} mods confirmés en jeu.`
+              );
+            }
           }
         }
       }

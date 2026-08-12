@@ -284,3 +284,75 @@ export function verifyPlugs(
   }
   return { ok, missing };
 }
+
+
+/**
+ * Trouve, pour une instance d'armure précise, l'emplacement et le mod de
+ * stat (+N) réellement insérables.
+ *
+ * Contrairement au manifest (qui liste tout ce qui existe), on se fonde sur
+ * le composant 310 : Bungie y indique, emplacement par emplacement, ce que
+ * CE joueur peut poser sur CET objet (`canInsert`). C'est la seule source
+ * fiable — le manifest propose des mods non débloqués, et Bungie répond
+ * alors « The request to modify an item failed ».
+ */
+export function findStatModForInstance(opts: {
+  defs: Defs;
+  data: ProfileResponse;
+  instanceId: string;
+  itemHash: number;
+  statHash: number;
+  /** Emplacements déjà réservés sur cette pièce */
+  usedSockets?: Set<number>;
+}): { socketIndex: number; plugHash: number; name: string; value: number } | null {
+  const { defs, data, instanceId, itemHash, statHash, usedSockets } = opts;
+  const available =
+    data.itemComponents?.reusablePlugs?.data?.[instanceId]?.plugs ?? {};
+  const states =
+    data.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
+
+  const candidates = modSocketIndexes(defs, itemHash, ARMOR_MOD_CATEGORY);
+  const indexes =
+    candidates.length > 0
+      ? candidates
+      : Object.keys(available).map((k) => Number(k));
+
+  let best: {
+    socketIndex: number;
+    plugHash: number;
+    name: string;
+    value: number;
+  } | null = null;
+
+  for (const socketIndex of indexes) {
+    if (usedSockets?.has(socketIndex)) continue;
+    if (states[socketIndex]?.isVisible === false) continue;
+    for (const plug of available[String(socketIndex)] ?? []) {
+      if (plug.canInsert === false || plug.enabled === false) continue;
+      const def = defs.items[plug.plugItemHash];
+      const category = def?.plug?.plugCategoryIdentifier ?? "";
+      if (!category.startsWith(ARMOR_MOD_CATEGORY_PREFIX)) continue;
+      const stat = (def?.investmentStats ?? []).find(
+        (s) => s.statTypeHash === statHash && !s.isConditionallyActive
+      );
+      if (!stat || stat.value <= 0) continue;
+      // Un mod qui pénalise une autre stat est moins bon
+      const penalties = (def?.investmentStats ?? []).filter(
+        (s) =>
+          s.statTypeHash !== statHash &&
+          ARMOR_STAT_HASHES.includes(s.statTypeHash) &&
+          s.value < 0
+      ).length;
+      const score = stat.value - penalties * 5;
+      if (!best || score > best.value) {
+        best = {
+          socketIndex,
+          plugHash: plug.plugItemHash,
+          name: def?.displayProperties?.name ?? "mod",
+          value: stat.value,
+        };
+      }
+    }
+  }
+  return best;
+}

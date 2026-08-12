@@ -172,21 +172,27 @@ export default function ModsPanel() {
   async function applyPlanCore(plan: Plan) {
     const posed: ModSuggestion[] = [];
     for (const s of plan.suggestions) {
-      try {
-        await insertPlug({
-          itemId: plan.item.instanceId,
-          characterId: selectedChar,
-          socketIndex: s.socketIndex,
-          plugItemHash: s.plugHash,
-        });
+      let done = false;
+      for (let attempt = 0; attempt < 2 && !done; attempt++) {
+        try {
+          await insertPlug({
+            itemId: plan.item.instanceId,
+            characterId: selectedChar,
+            socketIndex: s.socketIndex,
+            plugItemHash: s.plugHash,
+          });
+          done = true;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "refusé";
+          // « Refresh the item and try again » : l'objet vient de bouger,
+          // on laisse Bungie se synchroniser avant de réessayer.
+          if (attempt === 0) await sleep(900);
+          else pushLog(`⚠️ ${plan.item.name} · ${s.name} : ${msg}`);
+        }
+      }
+      if (done) {
         posed.push(s);
-        await sleep(350);
-      } catch (e) {
-        pushLog(
-          `⚠️ ${plan.item.name} · ${s.name} : ${
-            e instanceof Error ? e.message : "refusé"
-          }`
-        );
+        await sleep(500);
       }
     }
     return posed;
@@ -197,6 +203,7 @@ export default function ModsPanel() {
     setBusy(true);
     try {
       const posed = await applyPlanCore(plan);
+      await sleep(1200);
       const fresh = await fetchProfile();
       if (fresh && posed.length > 0) {
         const { ok, missing } = verifyPlugs(
@@ -230,6 +237,7 @@ export default function ModsPanel() {
       }
 
       // Vérification : seul le profil relu fait foi
+      await sleep(1200);
       const fresh = await fetchProfile();
       let totalOk = 0;
       let totalExpected = 0;
