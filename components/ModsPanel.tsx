@@ -39,6 +39,8 @@ interface Plan {
   item: GearItem;
   suggestions: ModSuggestion[];
   totalGain: number;
+  /** Emplacements réellement modifiables depuis le web */
+  socketCount: number;
 }
 
 export default function ModsPanel() {
@@ -159,6 +161,7 @@ export default function ModsPanel() {
         item,
         suggestions,
         totalGain: suggestions.reduce((a, s) => a + s.gain, 0),
+        socketCount: sockets.length,
       };
     });
   }, [defs, profile, gear, categoryHash, targetStat, relevantStats, tab]);
@@ -183,11 +186,19 @@ export default function ModsPanel() {
           });
           done = true;
         } catch (e) {
-          const msg = e instanceof Error ? e.message : "refusé";
+          const raw = e instanceof Error ? e.message : "refusé";
+          // Certains emplacements ne sont pas modifiables hors du jeu :
+          // inutile d'insister, on l'explique une bonne fois.
+          if (/cannot perform that change/i.test(raw)) {
+            pushLog(
+              `⛔ ${plan.item.name} · ${s.name} : non modifiable depuis le web (à faire en jeu).`
+            );
+            break;
+          }
           // « Refresh the item and try again » : l'objet vient de bouger,
           // on laisse Bungie se synchroniser avant de réessayer.
           if (attempt === 0) await sleep(900);
-          else pushLog(`⚠️ ${plan.item.name} · ${s.name} : ${msg}`);
+          else pushLog(`⚠️ ${plan.item.name} · ${s.name} : ${raw}`);
         }
       }
       if (done) {
@@ -405,7 +416,10 @@ export default function ModsPanel() {
                 >
                   {plan.totalGain > 0
                     ? `+${plan.totalGain} ${statName(targetStat)}`
-                    : "déjà optimal"}
+                    : plan.suggestions.length === 0 &&
+                        plan.socketCount === 0
+                      ? "aucun mod modifiable"
+                      : "déjà optimal"}
                 </span>
                 {plan.suggestions.length > 0 && (
                   <button
@@ -451,6 +465,9 @@ export default function ModsPanel() {
       )}
 
       <p className="text-xs opacity-50">
+        Sur les armes, seuls les <strong>mods</strong> sont modifiables depuis
+        le web : les perks du roll (canon, chargeur, trait) et les paliers de
+        chef-d&apos;œuvre sont réservés au jeu, l&apos;API Bungie les refuse.
         Un même mod ne peut occuper qu&apos;un emplacement par pièce (le jeu le
         déplace au lieu de le dupliquer) : les emplacements suivants reçoivent
         donc le meilleur mod <em>différent</em>. Chaque pose est vérifiée après

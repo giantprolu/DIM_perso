@@ -460,6 +460,12 @@ export default function OptimizerPage() {
                 done = true;
               } catch (e) {
                 const msg = e instanceof Error ? e.message : "refusé";
+                if (/cannot perform that change/i.test(msg)) {
+                  pushLog(
+                    `⛔ ${piece.name} · ${found.name} : non modifiable depuis le web (à faire en jeu).`
+                  );
+                  break;
+                }
                 if (attempt === 0) {
                   await sleep(900); // l'objet était encore « frais »
                 } else {

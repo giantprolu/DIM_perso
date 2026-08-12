@@ -53,6 +53,28 @@ export function modSocketIndexes(
   );
 }
 
+/**
+ * L'API Bungie n'autorise l'insertion que d'un sous-ensemble de plugs.
+ * Sont notamment REFUSÉS (« You cannot perform that change through
+ * Bungie.net at this time ») :
+ *  - les paliers de chef-d'œuvre (masterworks),
+ *  - les perks issus du roll d'une arme : canons, chargeurs, traits,
+ *    origines, intrinsèques… Ils se changent en jeu, pas ici.
+ * Restent modifiables : les vrais mods d'arme (v400.weapon.mod_*) et les
+ * mods d'armure (enhancements.*).
+ */
+function isInsertablePlug(
+  defs: Defs,
+  plugHash: number,
+  isWeapon: boolean
+): boolean {
+  const category = defs.items[plugHash]?.plug?.plugCategoryIdentifier ?? "";
+  if (!category) return false;
+  if (category.includes("masterwork")) return false;
+  if (isWeapon) return category.includes("weapon.mod");
+  return category.startsWith(ARMOR_MOD_CATEGORY_PREFIX);
+}
+
 function isEmptyPlug(defs: Defs, plugHash: number): boolean {
   const name = defs.items[plugHash]?.displayProperties?.name ?? "";
   const category = defs.items[plugHash]?.plug?.plugCategoryIdentifier ?? "";
@@ -84,7 +106,8 @@ function optionsFor(
   itemHash: number,
   socketIndex: number,
   targetStat: number,
-  relevantStats: number[]
+  relevantStats: number[],
+  isWeapon: boolean
 ): PlugOption[] {
   const fromApi: AvailablePlug[] | undefined =
     data.itemComponents?.reusablePlugs?.data?.[instanceId]?.plugs?.[
@@ -112,6 +135,8 @@ function optionsFor(
     seen.add(hash);
     const def = defs.items[hash];
     if (!def || isEmptyPlug(defs, hash)) continue;
+    // Inutile de proposer ce que Bungie refusera d'insérer
+    if (!isInsertablePlug(defs, hash, isWeapon)) continue;
     const effects = (def.investmentStats ?? [])
       .filter(
         (s) => relevantStats.includes(s.statTypeHash) && !s.isConditionallyActive
@@ -144,6 +169,7 @@ export function buildModSockets(opts: {
 }): ModSocket[] {
   const { defs, data, instanceId, itemHash, categoryHash, targetStat, relevantStats } =
     opts;
+  const isWeapon = defs.items[itemHash]?.itemType === 3;
   const states = data.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
   const result: ModSocket[] = [];
 
@@ -157,7 +183,8 @@ export function buildModSockets(opts: {
       itemHash,
       socketIndex,
       targetStat,
-      relevantStats
+      relevantStats,
+      isWeapon
     );
     // Un emplacement sans alternative n'a pas d'intérêt ici
     if (options.length === 0) continue;
@@ -329,9 +356,8 @@ export function findStatModForInstance(opts: {
     if (states[socketIndex]?.isVisible === false) continue;
     for (const plug of available[String(socketIndex)] ?? []) {
       if (plug.canInsert === false || plug.enabled === false) continue;
+      if (!isInsertablePlug(defs, plug.plugItemHash, false)) continue;
       const def = defs.items[plug.plugItemHash];
-      const category = def?.plug?.plugCategoryIdentifier ?? "";
-      if (!category.startsWith(ARMOR_MOD_CATEGORY_PREFIX)) continue;
       const stat = (def?.investmentStats ?? []).find(
         (s) => s.statTypeHash === statHash && !s.isConditionallyActive
       );
