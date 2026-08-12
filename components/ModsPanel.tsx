@@ -152,6 +152,7 @@ export default function ModsPanel() {
         categoryHash,
         targetStat,
         relevantStats,
+        characterId: selectedChar,
       });
       const suggestions = suggestMods({
         sockets,

@@ -98,6 +98,57 @@ function statGain(defs: Defs, plugHash: number, statHash: number): number {
   );
 }
 
+/**
+ * Plugs réellement disponibles pour un emplacement.
+ *
+ * Trois sources, par ordre de fiabilité :
+ *  1. le composant 310, propre à l'instance (surtout les armes) ;
+ *  2. les plug sets du personnage puis du compte — c'est là que vivent les
+ *     mods d'ARMURE, débloqués une fois pour toutes et donc absents du 310 ;
+ *  3. à défaut, le manifest (qui ignore ce que tu as débloqué).
+ */
+function availablePlugs(
+  defs: Defs,
+  data: ProfileResponse,
+  instanceId: string,
+  itemHash: number,
+  socketIndex: number,
+  characterId?: string
+): { hash: number; canInsert: boolean }[] {
+  const fromInstance =
+    data.itemComponents?.reusablePlugs?.data?.[instanceId]?.plugs?.[
+      String(socketIndex)
+    ];
+  if (fromInstance && fromInstance.length > 0) {
+    return fromInstance.map((p) => ({
+      hash: p.plugItemHash,
+      canInsert: p.canInsert !== false && p.enabled !== false,
+    }));
+  }
+
+  const entry = defs.items[itemHash]?.sockets?.socketEntries?.[socketIndex];
+  const setHash = entry?.reusablePlugSetHash ?? entry?.randomizedPlugSetHash;
+  if (!setHash) return [];
+
+  const fromCharacter = characterId
+    ? data.characterPlugSets?.data?.[characterId]?.plugs?.[String(setHash)]
+    : undefined;
+  const fromProfile = data.profilePlugSets?.data?.plugs?.[String(setHash)];
+  const unlocked = fromCharacter ?? fromProfile;
+  if (unlocked && unlocked.length > 0) {
+    return unlocked.map((p) => ({
+      hash: p.plugItemHash,
+      canInsert: p.canInsert !== false && p.enabled !== false,
+    }));
+  }
+
+  // Dernier recours : le catalogue du manifest
+  return (defs.plugSets?.[setHash]?.reusablePlugItems ?? []).map((i) => ({
+    hash: i.plugItemHash,
+    canInsert: true,
+  }));
+}
+
 /** Options réellement disponibles pour un emplacement donné. */
 function optionsFor(
   defs: Defs,
@@ -107,26 +158,17 @@ function optionsFor(
   socketIndex: number,
   targetStat: number,
   relevantStats: number[],
-  isWeapon: boolean
+  isWeapon: boolean,
+  characterId?: string
 ): PlugOption[] {
-  const fromApi: AvailablePlug[] | undefined =
-    data.itemComponents?.reusablePlugs?.data?.[instanceId]?.plugs?.[
-      String(socketIndex)
-    ];
-
-  let hashes: { hash: number; canInsert: boolean }[];
-  if (fromApi && fromApi.length > 0) {
-    hashes = fromApi.map((p) => ({
-      hash: p.plugItemHash,
-      canInsert: p.canInsert !== false && p.enabled !== false,
-    }));
-  } else {
-    // Repli manifest : plugSet de l'emplacement
-    const entry = defs.items[itemHash]?.sockets?.socketEntries?.[socketIndex];
-    const setHash = entry?.reusablePlugSetHash ?? entry?.randomizedPlugSetHash;
-    const items = setHash ? defs.plugSets?.[setHash]?.reusablePlugItems ?? [] : [];
-    hashes = items.map((i) => ({ hash: i.plugItemHash, canInsert: true }));
-  }
+  const hashes = availablePlugs(
+    defs,
+    data,
+    instanceId,
+    itemHash,
+    socketIndex,
+    characterId
+  );
 
   const seen = new Set<number>();
   const options: PlugOption[] = [];
@@ -166,9 +208,18 @@ export function buildModSockets(opts: {
   categoryHash: number;
   targetStat: number;
   relevantStats: number[];
+  characterId?: string;
 }): ModSocket[] {
-  const { defs, data, instanceId, itemHash, categoryHash, targetStat, relevantStats } =
-    opts;
+  const {
+    defs,
+    data,
+    instanceId,
+    itemHash,
+    categoryHash,
+    targetStat,
+    relevantStats,
+    characterId,
+  } = opts;
   const isWeapon = defs.items[itemHash]?.itemType === 3;
   const states = data.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
   const result: ModSocket[] = [];
@@ -184,7 +235,8 @@ export function buildModSockets(opts: {
       socketIndex,
       targetStat,
       relevantStats,
-      isWeapon
+      isWeapon,
+      characterId
     );
     // Un emplacement sans alternative n'a pas d'intérêt ici
     if (options.length === 0) continue;
@@ -331,10 +383,11 @@ export function findStatModForInstance(opts: {
   statHash: number;
   /** Emplacements déjà réservés sur cette pièce */
   usedSockets?: Set<number>;
+  /** Personnage porteur, pour ses plug sets débloqués */
+  characterId?: string;
 }): { socketIndex: number; plugHash: number; name: string; value: number } | null {
-  const { defs, data, instanceId, itemHash, statHash, usedSockets } = opts;
-  const available =
-    data.itemComponents?.reusablePlugs?.data?.[instanceId]?.plugs ?? {};
+  const { defs, data, instanceId, itemHash, statHash, usedSockets, characterId } =
+    opts;
   const states =
     data.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
 
@@ -342,7 +395,7 @@ export function findStatModForInstance(opts: {
   const indexes =
     candidates.length > 0
       ? candidates
-      : Object.keys(available).map((k) => Number(k));
+      : states.map((_, i) => i);
 
   let best: {
     socketIndex: number;
@@ -354,10 +407,17 @@ export function findStatModForInstance(opts: {
   for (const socketIndex of indexes) {
     if (usedSockets?.has(socketIndex)) continue;
     if (states[socketIndex]?.isVisible === false) continue;
-    for (const plug of available[String(socketIndex)] ?? []) {
-      if (plug.canInsert === false || plug.enabled === false) continue;
-      if (!isInsertablePlug(defs, plug.plugItemHash, false)) continue;
-      const def = defs.items[plug.plugItemHash];
+    for (const plug of availablePlugs(
+      defs,
+      data,
+      instanceId,
+      itemHash,
+      socketIndex,
+      characterId
+    )) {
+      if (!plug.canInsert) continue;
+      if (!isInsertablePlug(defs, plug.hash, false)) continue;
+      const def = defs.items[plug.hash];
       const stat = (def?.investmentStats ?? []).find(
         (s) => s.statTypeHash === statHash && !s.isConditionallyActive
       );
@@ -373,7 +433,7 @@ export function findStatModForInstance(opts: {
       if (!best || score > best.value) {
         best = {
           socketIndex,
-          plugHash: plug.plugItemHash,
+          plugHash: plug.hash,
           name: def?.displayProperties?.name ?? "mod",
           value: stat.value,
         };

@@ -436,10 +436,16 @@ export default function OptimizerPage() {
               itemHash: piece.itemHash,
               statHash,
               usedSockets: used,
+              characterId: targetChar,
             });
             if (!found) {
+              const socketCount =
+                modsData.itemComponents?.sockets?.data?.[id]?.sockets?.length ??
+                0;
               pushLog(
-                `⚠️ ${piece.name} : aucun mod ${statName} posable (non débloqué ou emplacement occupé).`
+                socketCount === 0
+                  ? `⚠️ ${piece.name} : emplacements illisibles (profil incomplet).`
+                  : `⚠️ ${piece.name} : aucun mod ${statName} débloqué et posable sur cette pièce.`
               );
               flat.shift();
               continue;

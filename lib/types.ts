@@ -232,6 +232,10 @@ export interface InGameLoadout {
   items?: InGameLoadoutItem[];
 }
 
+export interface PlugSetsComponent {
+  plugs?: Record<string, AvailablePlug[]>;
+}
+
 export interface ItemQuantity {
   itemHash: number;
   quantity: number;
@@ -321,6 +325,10 @@ export interface ProfileResponse {
     data?: { collectibles?: Record<string, { state: number }> };
   };
   profileCurrencies?: { data?: { items: ProfileItem[] } };
+  /** Plugs débloqués au niveau du compte (livrés avec le composant 305) */
+  profilePlugSets?: { data?: PlugSetsComponent };
+  /** Plugs débloqués par personnage */
+  characterPlugSets?: { data?: Record<string, PlugSetsComponent> };
   characterLoadouts?: {
     data?: Record<string, { loadouts?: InGameLoadout[] }>;
   };
