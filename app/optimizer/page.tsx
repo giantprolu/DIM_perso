@@ -395,6 +395,14 @@ export default function OptimizerPage() {
         b.mods.forEach((n, i) => {
           for (let k = 0; k < n; k++) flat.push(ARMOR_STAT_HASHES[i]);
         });
+        // On note ce qu'on croit avoir posé, pour le vérifier ensuite
+        const posed: {
+          instanceId: string;
+          socketIndex: number;
+          plugHash: number;
+          label: string;
+        }[] = [];
+
         for (const id of b.pieceIds) {
           if (flat.length === 0) break;
           const piece = pieceById.get(id);
@@ -418,11 +426,37 @@ export default function OptimizerPage() {
               socketIndex: socket.socketIndex,
               plugItemHash: plugHash,
             });
-            pushLog(`🔧 +10 ${statName} posé sur ${piece.name}.`);
-            await sleep(200);
+            posed.push({
+              instanceId: id,
+              socketIndex: socket.socketIndex,
+              plugHash,
+              label: `+10 ${statName} sur ${piece.name}`,
+            });
+            await sleep(350);
           } catch (e) {
             pushLog(
               `⚠️ ${piece.name} : mod refusé (${e instanceof Error ? e.message : "énergie insuffisante ?"})`
+            );
+          }
+        }
+
+        // Bungie peut accepter l'appel sans que le mod tienne : on relit.
+        if (posed.length > 0) {
+          const checkRes = await fetch("/api/bungie/profile?scope=gear");
+          if (checkRes.ok) {
+            const checkData = (await checkRes.json()) as ProfileResponse;
+            const socketsData = checkData.itemComponents?.sockets?.data ?? {};
+            let ok = 0;
+            for (const p of posed) {
+              const actual =
+                socketsData[p.instanceId]?.sockets?.[p.socketIndex]?.plugHash;
+              if (actual === p.plugHash) ok++;
+              else pushLog(`⚠️ ${p.label} : non posé en jeu.`);
+            }
+            pushLog(
+              ok === posed.length
+                ? `🔧 ${ok} mods confirmés en jeu.`
+                : `🔧 ${ok}/${posed.length} mods confirmés en jeu.`
             );
           }
         }

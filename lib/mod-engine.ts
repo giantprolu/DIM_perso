@@ -195,13 +195,22 @@ export function suggestMods(opts: {
   energyCapacity: number;
 }): ModSuggestion[] {
   const { sockets, energyCapacity } = opts;
-
-  // Énergie déjà consommée par les mods qu'on ne remplace pas
   const suggestions: ModSuggestion[] = [];
-  let budget = energyCapacity;
 
-  // On repart de zéro sur les emplacements concernés
-  for (const s of sockets) budget += s.currentCost;
+  /*
+   * Un même mod ne peut pas occuper deux emplacements de la même pièce :
+   * le jeu le DÉPLACE au lieu de le dupliquer. Proposer le meilleur mod
+   * partout donnait donc des appels tous acceptés par Bungie, mais un seul
+   * mod réellement posé au final. On retient un plug au plus une fois par
+   * pièce et on descend dans le classement pour les emplacements suivants.
+   */
+  const used = new Set<number>();
+  for (const s of sockets) {
+    if (s.currentPlugHash) used.add(s.currentPlugHash);
+  }
+
+  // Énergie réellement consommée aujourd'hui par les mods en place
+  let energyUsed = sockets.reduce((a, s) => a + s.currentCost, 0);
 
   // Priorité aux emplacements où le gain potentiel est le plus fort
   const ordered = [...sockets].sort((a, b) => {
@@ -211,18 +220,23 @@ export function suggestMods(opts: {
   });
 
   for (const socket of ordered) {
-    const pick = socket.options.find(
-      (o) =>
-        o.canInsert &&
-        o.gain > 0 &&
-        (energyCapacity === 0 || o.energyCost <= budget)
-    );
+    const pick = socket.options.find((o) => {
+      if (!o.canInsert || o.gain <= 0) return false;
+      // Déjà posé ici : rien à faire, mais le plug reste « pris »
+      if (o.hash === socket.currentPlugHash) return true;
+      if (used.has(o.hash)) return false;
+      if (energyCapacity > 0) {
+        const next = energyUsed - socket.currentCost + o.energyCost;
+        if (next > energyCapacity) return false;
+      }
+      return true;
+    });
     if (!pick) continue;
-    if (pick.hash === socket.currentPlugHash) {
-      budget -= pick.energyCost;
-      continue;
-    }
-    if (energyCapacity > 0) budget -= pick.energyCost;
+
+    if (pick.hash === socket.currentPlugHash) continue; // déjà optimal
+
+    used.add(pick.hash);
+    energyUsed = energyUsed - socket.currentCost + pick.energyCost;
     suggestions.push({
       socketIndex: socket.socketIndex,
       plugHash: pick.hash,
@@ -247,4 +261,26 @@ export function isArmorStatMod(defs: Defs, plugHash: number): boolean {
   return (defs.items[plugHash]?.investmentStats ?? []).some(
     (s) => ARMOR_STAT_HASHES.includes(s.statTypeHash) && !s.isConditionallyActive
   );
+}
+
+
+/**
+ * Vérifie, profil fraîchement relu à l'appui, que les mods attendus sont
+ * réellement en place. Bungie peut accepter un appel (ErrorCode 1) sans que
+ * le mod tienne : seule la relecture fait foi.
+ */
+export function verifyPlugs(
+  data: ProfileResponse,
+  instanceId: string,
+  expected: { socketIndex: number; plugHash: number; name: string }[]
+): { ok: number; missing: string[] } {
+  const sockets =
+    data.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
+  let ok = 0;
+  const missing: string[] = [];
+  for (const e of expected) {
+    if (sockets[e.socketIndex]?.plugHash === e.plugHash) ok++;
+    else missing.push(e.name);
+  }
+  return { ok, missing };
 }

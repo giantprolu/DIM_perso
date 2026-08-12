@@ -16,6 +16,7 @@ import {
 import {
   buildModSockets,
   suggestMods,
+  verifyPlugs,
   type ModSuggestion,
 } from "@/lib/mod-engine";
 import { insertPlug, sleep } from "@/lib/d2-actions";
@@ -167,29 +168,47 @@ export default function ModsPanel() {
   const statName = (hash: number) =>
     defs?.stats?.[hash]?.displayProperties?.name ?? `Stat ${hash}`;
 
+  /** Pose les mods d'une pièce, puis vérifie qu'ils ont réellement tenu. */
+  async function applyPlanCore(plan: Plan) {
+    const posed: ModSuggestion[] = [];
+    for (const s of plan.suggestions) {
+      try {
+        await insertPlug({
+          itemId: plan.item.instanceId,
+          characterId: selectedChar,
+          socketIndex: s.socketIndex,
+          plugItemHash: s.plugHash,
+        });
+        posed.push(s);
+        await sleep(350);
+      } catch (e) {
+        pushLog(
+          `⚠️ ${plan.item.name} · ${s.name} : ${
+            e instanceof Error ? e.message : "refusé"
+          }`
+        );
+      }
+    }
+    return posed;
+  }
+
   async function applyPlan(plan: Plan) {
     if (busy || plan.suggestions.length === 0) return;
     setBusy(true);
     try {
-      for (const s of plan.suggestions) {
-        try {
-          await insertPlug({
-            itemId: plan.item.instanceId,
-            characterId: selectedChar,
-            socketIndex: s.socketIndex,
-            plugItemHash: s.plugHash,
-          });
-          pushLog(`🔧 ${s.name} → ${plan.item.name} (+${s.gain}).`);
-          await sleep(200);
-        } catch (e) {
-          pushLog(
-            `⚠️ ${plan.item.name} · ${s.name} : ${
-              e instanceof Error ? e.message : "refusé"
-            }`
-          );
-        }
+      const posed = await applyPlanCore(plan);
+      const fresh = await fetchProfile();
+      if (fresh && posed.length > 0) {
+        const { ok, missing } = verifyPlugs(
+          fresh,
+          plan.item.instanceId,
+          posed
+        );
+        pushLog(
+          `${missing.length === 0 ? "✅" : "⚠️"} ${plan.item.name} : ${ok}/${posed.length} mods confirmés en jeu` +
+            (missing.length > 0 ? ` — non posés : ${missing.join(", ")}` : "")
+        );
       }
-      await fetchProfile();
     } finally {
       setBusy(false);
     }
@@ -203,28 +222,38 @@ export default function ModsPanel() {
       `▶️ Application des mods ${tab === "weapons" ? "d'armes" : "d'armure"} — objectif ${statName(targetStat)}…`
     );
     try {
+      const posedByItem: { plan: Plan; posed: ModSuggestion[] }[] = [];
       for (const plan of plans) {
-        for (const s of plan.suggestions) {
-          try {
-            await insertPlug({
-              itemId: plan.item.instanceId,
-              characterId: selectedChar,
-              socketIndex: s.socketIndex,
-              plugItemHash: s.plugHash,
-            });
-            pushLog(`🔧 ${s.name} → ${plan.item.name} (+${s.gain}).`);
-            await sleep(200);
-          } catch (e) {
+        if (plan.suggestions.length === 0) continue;
+        const posed = await applyPlanCore(plan);
+        posedByItem.push({ plan, posed });
+      }
+
+      // Vérification : seul le profil relu fait foi
+      const fresh = await fetchProfile();
+      let totalOk = 0;
+      let totalExpected = 0;
+      if (fresh) {
+        for (const { plan, posed } of posedByItem) {
+          const { ok, missing } = verifyPlugs(
+            fresh,
+            plan.item.instanceId,
+            posed
+          );
+          totalOk += ok;
+          totalExpected += posed.length;
+          if (missing.length > 0) {
             pushLog(
-              `⚠️ ${plan.item.name} · ${s.name} : ${
-                e instanceof Error ? e.message : "refusé"
-              }`
+              `⚠️ ${plan.item.name} : ${missing.join(", ")} non posé(s) en jeu.`
             );
           }
         }
       }
-      pushLog("✅ Terminé.");
-      await fetchProfile();
+      pushLog(
+        totalOk === totalExpected
+          ? `✅ Terminé — ${totalOk} mods confirmés en jeu.`
+          : `⚠️ ${totalOk}/${totalExpected} mods confirmés en jeu.`
+      );
     } finally {
       setBusy(false);
     }
@@ -414,7 +443,11 @@ export default function ModsPanel() {
       )}
 
       <p className="text-xs opacity-50">
-        Seuls les mods que tu as débloqués et réellement posables sont proposés
+        Un même mod ne peut occuper qu&apos;un emplacement par pièce (le jeu le
+        déplace au lieu de le dupliquer) : les emplacements suivants reçoivent
+        donc le meilleur mod <em>différent</em>. Chaque pose est vérifiée après
+        coup sur ton profil, et le journal ne dit « confirmé » que si le mod y
+        est vraiment. Seuls les mods que tu as débloqués et réellement posables sont proposés
         (Bungie les renvoie emplacement par emplacement). Pour l&apos;armure, le
         budget d&apos;énergie de chaque pièce est respecté ; un mod refusé est
         signalé dans le journal.
