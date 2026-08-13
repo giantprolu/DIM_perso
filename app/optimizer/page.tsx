@@ -406,12 +406,12 @@ export default function OptimizerPage() {
          * objet, au lieu de deviner depuis le manifest.
          */
         pushLog("⏳ Rafraîchissement de l'équipement avant la pose des mods…");
-        await sleep(1200);
+        await sleep(1800);
         const modsRes = await fetch("/api/bungie/profile?scope=equipped");
         if (!modsRes.ok) {
           pushLog("⚠️ Profil illisible : pose des mods abandonnée.");
         } else {
-          const modsData = (await modsRes.json()) as ProfileResponse;
+          let modsData = (await modsRes.json()) as ProfileResponse;
           const posed: {
             instanceId: string;
             socketIndex: number;
@@ -429,7 +429,7 @@ export default function OptimizerPage() {
               defs.stats[statHash]?.displayProperties?.name ?? "stat";
 
             const used = usedByItem.get(id) ?? new Set<number>();
-            const found = findStatModForInstance({
+            let found = findStatModForInstance({
               defs,
               data: modsData,
               instanceId: id,
@@ -473,7 +473,30 @@ export default function OptimizerPage() {
                   break;
                 }
                 if (attempt === 0) {
-                  await sleep(900); // l'objet était encore « frais »
+                  /*
+                   * « Refresh the item and try again » : le profil qu'on avait
+                   * n'était pas encore à jour. Rejouer le même appel figé
+                   * échoue systématiquement — on relit l'état réel de CET
+                   * objet avant de retenter, au cas où l'emplacement/mod
+                   * valide ait changé entre-temps.
+                   */
+                  await sleep(1200);
+                  const retryRes = await fetch(
+                    "/api/bungie/profile?scope=equipped"
+                  );
+                  if (retryRes.ok) {
+                    modsData = (await retryRes.json()) as ProfileResponse;
+                    const refreshed = findStatModForInstance({
+                      defs,
+                      data: modsData,
+                      instanceId: id,
+                      itemHash: piece.itemHash,
+                      statHash,
+                      usedSockets: used,
+                      characterId: targetChar,
+                    });
+                    if (refreshed) found = refreshed;
+                  }
                 } else {
                   pushLog(`⚠️ ${piece.name} · ${found.name} : ${msg}`);
                 }

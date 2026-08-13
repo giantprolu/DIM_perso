@@ -36,6 +36,8 @@ export interface ModSocket {
   currentName?: string;
   currentIcon?: string;
   currentCost: number;
+  /** Emplacement vide en jeu (aucun mod réel posé) */
+  isEmpty: boolean;
   options: PlugOption[];
 }
 
@@ -248,6 +250,7 @@ export function buildModSockets(opts: {
       currentName: currentDef?.displayProperties?.name,
       currentIcon: currentDef?.displayProperties?.icon,
       currentCost: currentPlugHash ? plugEnergyCost(defs, currentPlugHash) : 0,
+      isEmpty: !currentPlugHash || isEmptyPlug(defs, currentPlugHash),
       options,
     });
   }
@@ -262,6 +265,8 @@ export interface ModSuggestion {
   gain: number;
   energyCost: number;
   replaces?: string;
+  /** Effets du mod quand il ne sert pas la stat visée (emplacement comblé) */
+  effects?: { statHash: number; value: number }[];
 }
 
 /**
@@ -298,6 +303,8 @@ export function suggestMods(opts: {
     return gb - ga;
   });
 
+  const filled = new Set<number>();
+
   for (const socket of ordered) {
     const pick = socket.options.find((o) => {
       if (!o.canInsert || o.gain <= 0) return false;
@@ -311,6 +318,7 @@ export function suggestMods(opts: {
       return true;
     });
     if (!pick) continue;
+    filled.add(socket.socketIndex);
 
     if (pick.hash === socket.currentPlugHash) continue; // déjà optimal
 
@@ -323,6 +331,45 @@ export function suggestMods(opts: {
       icon: pick.icon,
       gain: pick.gain,
       energyCost: pick.energyCost,
+      replaces: socket.currentName,
+    });
+  }
+
+  /*
+   * La stat visée n'a qu'un seul mod par emplacement à offrir : les autres
+   * emplacements VIDES de la pièce n'y gagnent rien, mais autant les combler
+   * avec le meilleur mod utile encore disponible plutôt que les laisser
+   * inoccupés (le jeu permet un mod par emplacement, pas juste sur le
+   * premier).
+   */
+  for (const socket of ordered) {
+    if (filled.has(socket.socketIndex) || !socket.isEmpty) continue;
+    let best: PlugOption | null = null;
+    let bestScore = -1;
+    for (const o of socket.options) {
+      if (!o.canInsert || used.has(o.hash)) continue;
+      if (energyCapacity > 0) {
+        const next = energyUsed - socket.currentCost + o.energyCost;
+        if (next > energyCapacity) continue;
+      }
+      const score = o.effects.reduce((a, e) => a + Math.max(0, e.value), 0);
+      if (!best || score > bestScore) {
+        best = o;
+        bestScore = score;
+      }
+    }
+    if (!best) continue;
+
+    used.add(best.hash);
+    energyUsed = energyUsed - socket.currentCost + best.energyCost;
+    suggestions.push({
+      socketIndex: socket.socketIndex,
+      plugHash: best.hash,
+      name: best.name,
+      icon: best.icon,
+      gain: best.gain,
+      energyCost: best.energyCost,
+      effects: best.effects,
       replaces: socket.currentName,
     });
   }

@@ -417,10 +417,11 @@ export default function ModsPanel() {
                 >
                   {plan.totalGain > 0
                     ? `+${plan.totalGain} ${statName(targetStat)}`
-                    : plan.suggestions.length === 0 &&
-                        plan.socketCount === 0
-                      ? "aucun mod modifiable"
-                      : "déjà optimal"}
+                    : plan.suggestions.length > 0
+                      ? "emplacements à combler"
+                      : plan.socketCount === 0
+                        ? "aucun mod modifiable"
+                        : "déjà optimal"}
                 </span>
                 {plan.suggestions.length > 0 && (
                   <button
@@ -451,7 +452,13 @@ export default function ModsPanel() {
                       <div className="text-xs">
                         <div className="font-medium">{s.name}</div>
                         <div className="opacity-50">
-                          +{s.gain}
+                          {s.gain > 0
+                            ? `+${s.gain}`
+                            : s.effects && s.effects.length > 0
+                              ? s.effects
+                                  .map((e) => `+${e.value} ${statName(e.statHash)}`)
+                                  .join(" · ")
+                              : "emplacement comblé"}
                           {s.energyCost > 0 && ` · ${s.energyCost} énergie`}
                           {s.replaces && ` · remplace ${s.replaces}`}
                         </div>
@@ -470,8 +477,9 @@ export default function ModsPanel() {
         le web : les perks du roll (canon, chargeur, trait) et les paliers de
         chef-d&apos;œuvre sont réservés au jeu, l&apos;API Bungie les refuse.
         Un même mod ne peut occuper qu&apos;un emplacement par pièce (le jeu le
-        déplace au lieu de le dupliquer) : les emplacements suivants reçoivent
-        donc le meilleur mod <em>différent</em>. Chaque pose est vérifiée après
+        déplace au lieu de le dupliquer) : les emplacements qui ne peuvent rien
+        gagner sur la stat visée reçoivent quand même le meilleur autre mod
+        disponible plutôt que de rester vides. Chaque pose est vérifiée après
         coup sur ton profil, et le journal ne dit « confirmé » que si le mod y
         est vraiment. Seuls les mods que tu as débloqués et réellement posables sont proposés
         (Bungie les renvoie emplacement par emplacement). Pour l&apos;armure, le
