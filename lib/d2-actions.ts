@@ -1,5 +1,5 @@
-import { ARMOR_STAT_HASHES, BUCKET_POSTMASTER } from "./destiny-constants";
-import type { Defs, ProfileResponse } from "./types";
+import { BUCKET_POSTMASTER } from "./destiny-constants";
+import type { ProfileResponse, SocketState } from "./types";
 
 /** POST JSON vers nos routes /api/d2/*, avec remontée d'erreur lisible. */
 async function apiPost<T = { ok: boolean }>(
@@ -33,12 +33,21 @@ export const equipItems = (p: { itemIds: string[]; characterId: string }) =>
     results: { itemInstanceId: string; equipStatus: number }[];
   }>("/api/d2/equip", p);
 
+/** Résultat d'une pose de mod, tel que Bungie le renvoie dans la foulée. */
+export interface InsertPlugResult {
+  ok: boolean;
+  /** true/false selon l'objet renvoyé par Bungie ; null s'il ne l'a pas renvoyé */
+  applied: boolean | null;
+  actualPlugHash: number | null;
+  sockets: SocketState[] | null;
+}
+
 export const insertPlug = (p: {
   itemId: string;
   characterId: string;
   socketIndex: number;
   plugItemHash: number;
-}) => apiPost("/api/d2/insert-plug", p);
+}) => apiPost<InsertPlugResult>("/api/d2/insert-plug", p);
 
 /** Pointe (suit) ou dépointe une quête. */
 export const setTracked = (p: {
@@ -72,6 +81,28 @@ export const loadoutAction = (p: {
 }) => apiPost("/api/d2/loadout", p);
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Lit le profil sans jamais passer par un cache.
+ *
+ * Juste après une écriture (équipement, mod posé), un `fetch` ordinaire peut
+ * resservir la réponse précédente : on relisait alors l'ancien état et on
+ * concluait à tort « non posé en jeu ».
+ */
+export async function fetchProfileFresh(
+  scope: string
+): Promise<ProfileResponse> {
+  const res = await fetch(`/api/bungie/profile?scope=${scope}&t=${Date.now()}`, {
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => null)) as
+    | (ProfileResponse & { error?: string })
+    | null;
+  if (!res.ok || !json || json.error) {
+    throw new Error(json?.error ?? `profil illisible (HTTP ${res.status})`);
+  }
+  return json;
+}
 
 export interface ItemLocation {
   /** null = coffre */
@@ -168,50 +199,4 @@ export async function moveToCharacter(opts: {
     log(`❌ ${name} : ${e instanceof Error ? e.message : "transfert impossible"}`);
     return false;
   }
-}
-
-export interface StatModSocket {
-  socketIndex: number;
-  /** statHash → plugItemHash du mod +10 correspondant */
-  byStat: Map<number, number>;
-}
-
-/**
- * Trouve l'emplacement de mod de stats d'une armure et les plugs +10
- * disponibles, en lisant les plug sets du manifest (aucun hash codé en dur).
- *
- * Un mod de stat porte plusieurs `investmentStats` : depuis Armure 3.0, la
- * stat « coût en énergie » (3578062600) accompagne systématiquement la stat
- * d'armure. On ne raisonne donc que sur les stats d'armure, et on exige un
- * mod mono-stat pour écarter les mods de réglage (+5 / -5) et les chefs-d'œuvre.
- */
-export function findStatModSocket(
-  defs: Defs,
-  itemHash: number
-): StatModSocket | null {
-  const def = defs.items[itemHash];
-  const entries = def?.sockets?.socketEntries ?? [];
-  for (let index = 0; index < entries.length; index++) {
-    const plugSetHash =
-      entries[index].reusablePlugSetHash ?? entries[index].randomizedPlugSetHash;
-    if (!plugSetHash) continue;
-    const set = defs.plugSets?.[plugSetHash];
-    const byStat = new Map<number, number>();
-    for (const p of set?.reusablePlugItems ?? []) {
-      const plugDef = defs.items[p.plugItemHash];
-      const category = plugDef?.plug?.plugCategoryIdentifier ?? "";
-      if (!category.startsWith("enhancements.")) continue;
-      const armorStats = (plugDef?.investmentStats ?? []).filter(
-        (s) =>
-          ARMOR_STAT_HASHES.includes(s.statTypeHash) && !s.isConditionallyActive
-      );
-      if (armorStats.length !== 1) continue;
-      const stat = armorStats[0];
-      if (stat.value === 10 && !byStat.has(stat.statTypeHash)) {
-        byStat.set(stat.statTypeHash, p.plugItemHash);
-      }
-    }
-    if (byStat.size >= 3) return { socketIndex: index, byStat };
-  }
-  return null;
 }

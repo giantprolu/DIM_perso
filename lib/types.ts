@@ -351,7 +351,7 @@ export interface ProfileResponse {
         {
           primaryStat?: { value: number };
           damageTypeHash?: number;
-          energy?: { energyCapacity: number };
+          energy?: { energyCapacity: number; energyUsed?: number };
         }
       >;
     };

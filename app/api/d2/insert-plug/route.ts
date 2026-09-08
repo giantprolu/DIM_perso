@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bungiePost } from "@/lib/bungie-server";
 import { getAuthContext, withRefreshedCookies } from "@/lib/auth-server";
+import type { SocketState } from "@/lib/types";
+
+/**
+ * Réponse de `InsertSocketPlugFree` (DestinyItemChangeResponse).
+ *
+ * Bungie y renvoie l'objet APRÈS modification : c'est la seule source de
+ * vérité immédiate. Relire le profil juste après échoue régulièrement
+ * (réplication côté Bungie + cache HTTP) et faisait passer pour « non posé »
+ * un mod pourtant bien en place.
+ */
+interface ItemChangeResponse {
+  item?: {
+    sockets?: { data?: { sockets?: SocketState[] } };
+  };
+}
 
 export async function POST(request: NextRequest) {
   const ctx = await getAuthContext(request);
@@ -23,7 +38,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await bungiePost(
+    const changed = await bungiePost<ItemChangeResponse>(
       "/Destiny2/Actions/Items/InsertSocketPlugFree/",
       {
         plug: {
@@ -37,7 +52,19 @@ export async function POST(request: NextRequest) {
       },
       ctx.access
     );
-    return withRefreshedCookies(NextResponse.json({ ok: true }), ctx);
+
+    const sockets = changed?.item?.sockets?.data?.sockets ?? null;
+    const actual = sockets?.[body.socketIndex]?.plugHash ?? null;
+
+    const res = NextResponse.json({
+      ok: true,
+      /** null quand Bungie n'a pas renvoyé l'objet : on ne peut alors rien affirmer */
+      applied: sockets ? actual === body.plugItemHash : null,
+      actualPlugHash: actual,
+      sockets,
+    });
+    res.headers.set("Cache-Control", "no-store");
+    return withRefreshedCookies(res, ctx);
   } catch (e) {
     return withRefreshedCookies(
       NextResponse.json(

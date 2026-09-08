@@ -75,6 +75,9 @@ export async function GET(request: NextRequest) {
       access
     );
     const res = NextResponse.json(profile);
+    // Le profil change à chaque action (équipement, mod posé) : jamais de cache,
+    // ni navigateur ni proxy, sinon on relit un état périmé juste après écriture.
+    res.headers.set("Cache-Control", "no-store, max-age=0");
     if (refreshed) {
       const ttl = refreshed.refresh_expires_in;
       res.cookies.set(COOKIE_ACCESS, refreshed.access_token, cookieOpts(refreshed.expires_in));

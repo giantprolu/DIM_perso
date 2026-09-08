@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import ModsPanel from "@/components/ModsPanel";
-import { findStatModForInstance } from "@/lib/mod-engine";
+import {
+  ARMOR_MOD_CATEGORY,
+  bestModCombo,
+  buildItemModContext,
+  verifyPlugs,
+  type StatWeights,
+} from "@/lib/mod-engine";
+import { applyModCombo } from "@/lib/mod-apply";
 import {
   ARMOR_BUCKETS,
   ARMOR_SLOT_ORDER,
@@ -26,9 +33,7 @@ import {
 import {
   buildLocationMap,
   equipItems,
-  findStatModSocket,
-
-  insertPlug,
+  fetchProfileFresh,
   moveToCharacter,
   sleep,
 } from "@/lib/d2-actions";
@@ -353,9 +358,7 @@ export default function OptimizerPage() {
     setLog([]);
     pushLog("▶️ Application de l'assemblage…");
     try {
-      const res = await fetch("/api/bungie/profile?scope=gear");
-      if (!res.ok) throw new Error("profil illisible");
-      const fresh = (await res.json()) as ProfileResponse;
+      const fresh = await fetchProfileFresh("gear");
       setProfile(fresh);
       const locations = buildLocationMap(fresh);
 
@@ -393,11 +396,6 @@ export default function OptimizerPage() {
       }
 
       if (withMods) {
-        const flat: number[] = [];
-        b.mods.forEach((n, i) => {
-          for (let k = 0; k < n; k++) flat.push(ARMOR_STAT_HASHES[i]);
-        });
-
         /*
          * Bungie refuse d'écrire sur un objet dont l'état vient de changer
          * (« Refresh the item and try again »). On laisse l'équipement se
@@ -407,141 +405,153 @@ export default function OptimizerPage() {
          */
         pushLog("⏳ Rafraîchissement de l'équipement avant la pose des mods…");
         await sleep(1800);
-        const modsRes = await fetch("/api/bungie/profile?scope=equipped");
-        if (!modsRes.ok) {
+
+        let modsData: ProfileResponse | null = null;
+        try {
+          modsData = await fetchProfileFresh("equipped");
+        } catch {
           pushLog("⚠️ Profil illisible : pose des mods abandonnée.");
-        } else {
-          let modsData = (await modsRes.json()) as ProfileResponse;
-          const posed: {
+        }
+
+        if (modsData) {
+          /*
+           * L'assemblage a été calculé en supposant `b.mods` mods de +10,
+           * répartis par stat. On ne se limite plus à un mod par pièce : le
+           * solveur remplit TOUS les emplacements modifiables de chaque
+           * pièce, sous contrainte du budget d'énergie et de l'unicité d'un
+           * mod sur une même pièce. Les besoins encore à couvrir orientent
+           * les priorités, pièce après pièce.
+           */
+          const remaining = [...b.mods];
+          const instances = modsData.itemComponents?.instances?.data ?? {};
+          let applied = 0;
+          let failed = 0;
+          const toVerify: {
             instanceId: string;
-            socketIndex: number;
-            plugHash: number;
-            label: string;
+            name: string;
+            expected: { socketIndex: number; plugHash: number; name: string }[];
           }[] = [];
-          const usedByItem = new Map<string, Set<number>>();
 
           for (const id of b.pieceIds) {
-            if (flat.length === 0) break;
             const piece = pieceById.get(id);
             if (!piece) continue;
-            const statHash = flat[0];
-            const statName =
-              defs.stats[statHash]?.displayProperties?.name ?? "stat";
 
-            const used = usedByItem.get(id) ?? new Set<number>();
-            let found = findStatModForInstance({
+            const statWeights: StatWeights = {};
+            ARMOR_STAT_HASHES.forEach((h, i) => {
+              // Priorité forte aux stats que l'assemblage compte encore
+              // combler, appoint pour celles que tu valorises par ailleurs.
+              statWeights[h] = remaining[i] > 0 ? 10 : weights[i] > 0 ? 1 : 0;
+            });
+
+            const context = buildItemModContext({
               defs,
               data: modsData,
               instanceId: id,
               itemHash: piece.itemHash,
-              statHash,
-              usedSockets: used,
+              categoryHash: ARMOR_MOD_CATEGORY,
+              relevantStats: ARMOR_STAT_HASHES,
               characterId: targetChar,
+              energyCapacity: instances[id]?.energy?.energyCapacity ?? 0,
+              energyUsed: instances[id]?.energy?.energyUsed,
             });
-            if (!found) {
-              const socketCount =
-                modsData.itemComponents?.sockets?.data?.[id]?.sockets?.length ??
-                0;
+
+            if (context.sockets.length === 0) {
               pushLog(
-                socketCount === 0
-                  ? `⚠️ ${piece.name} : emplacements illisibles (profil incomplet).`
-                  : `⚠️ ${piece.name} : aucun mod ${statName} débloqué et posable sur cette pièce.`
+                `⚠️ ${piece.name} : aucun emplacement de mod modifiable depuis le web.`
               );
-              flat.shift();
               continue;
             }
-            flat.shift();
-            used.add(found.socketIndex);
-            usedByItem.set(id, used);
 
-            let done = false;
-            for (let attempt = 0; attempt < 2 && !done; attempt++) {
-              try {
-                await insertPlug({
-                  itemId: id,
-                  characterId: targetChar,
-                  socketIndex: found.socketIndex,
-                  plugItemHash: found.plugHash,
-                });
-                done = true;
-              } catch (e) {
-                const msg = e instanceof Error ? e.message : "refusé";
-                if (/cannot perform that change/i.test(msg)) {
-                  pushLog(
-                    `⛔ ${piece.name} · ${found.name} : non modifiable depuis le web (à faire en jeu).`
-                  );
-                  break;
-                }
-                if (attempt === 0) {
-                  /*
-                   * « Refresh the item and try again » : le profil qu'on avait
-                   * n'était pas encore à jour. Rejouer le même appel figé
-                   * échoue systématiquement — on relit l'état réel de CET
-                   * objet avant de retenter, au cas où l'emplacement/mod
-                   * valide ait changé entre-temps.
-                   */
-                  await sleep(1200);
-                  const retryRes = await fetch(
-                    "/api/bungie/profile?scope=equipped"
-                  );
-                  if (retryRes.ok) {
-                    modsData = (await retryRes.json()) as ProfileResponse;
-                    const refreshed = findStatModForInstance({
-                      defs,
-                      data: modsData,
-                      instanceId: id,
-                      itemHash: piece.itemHash,
-                      statHash,
-                      usedSockets: used,
-                      characterId: targetChar,
-                    });
-                    if (refreshed) found = refreshed;
-                  }
-                } else {
-                  pushLog(`⚠️ ${piece.name} · ${found.name} : ${msg}`);
-                }
-              }
+            const combo = bestModCombo({ context, weights: statWeights });
+            if (combo.changes.length === 0) {
+              pushLog(`✔️ ${piece.name} : mods déjà optimaux.`);
+              continue;
             }
-            if (done) {
-              posed.push({
+
+            const report = await applyModCombo({
+              defs,
+              instanceId: id,
+              characterId: targetChar,
+              itemName: piece.name,
+              changes: combo.changes,
+              sockets: context.sockets,
+              log: pushLog,
+            });
+            applied += report.applied;
+            failed += report.failed;
+
+            const unconfirmed = report.outcomes
+              .filter((o) => o.status === "incertain")
+              .map((o) => ({
+                socketIndex: o.choice.socketIndex,
+                plugHash: o.choice.plugHash,
+                name: o.choice.name,
+              }));
+            if (unconfirmed.length > 0) {
+              toVerify.push({
                 instanceId: id,
-                socketIndex: found.socketIndex,
-                plugHash: found.plugHash,
-                label: `${found.name} sur ${piece.name}`,
+                name: piece.name,
+                expected: unconfirmed,
               });
-              await sleep(500);
+            }
+
+            // Ce que la pièce a réellement apporté vient en déduction du plan
+            for (const o of report.outcomes) {
+              if (o.status === "échec") continue;
+              for (const e of o.choice.effects) {
+                const idx = ARMOR_STAT_HASHES.indexOf(e.statHash);
+                if (idx >= 0 && e.value > 0) {
+                  remaining[idx] = Math.max(
+                    0,
+                    remaining[idx] - Math.round(e.value / MOD_VALUE)
+                  );
+                }
+              }
             }
           }
 
-          // Bungie accepte parfois l'appel sans que le mod tienne : on relit.
-          if (posed.length > 0) {
+          // Filet de sécurité, uniquement pour ce que Bungie n'a pas confirmé
+          if (toVerify.length > 0) {
             await sleep(1200);
-            const checkRes = await fetch("/api/bungie/profile?scope=equipped");
-            if (checkRes.ok) {
-              const checkData = (await checkRes.json()) as ProfileResponse;
-              const socketsData = checkData.itemComponents?.sockets?.data ?? {};
-              let ok = 0;
-              for (const p of posed) {
-                const actual =
-                  socketsData[p.instanceId]?.sockets?.[p.socketIndex]?.plugHash;
-                if (actual === p.plugHash) ok++;
-                else pushLog(`⚠️ ${p.label} : non posé en jeu.`);
+            try {
+              const checkData = await fetchProfileFresh("equipped");
+              for (const v of toVerify) {
+                const { ok, missing } = verifyPlugs(
+                  checkData,
+                  v.instanceId,
+                  v.expected
+                );
+                applied += ok;
+                failed += missing.length;
+                if (missing.length > 0) {
+                  pushLog(
+                    `⚠️ ${v.name} : ${missing.join(", ")} non posé(s) en jeu.`
+                  );
+                }
               }
-              pushLog(
-                ok === posed.length
-                  ? `🔧 ${ok} mods confirmés en jeu.`
-                  : `🔧 ${ok}/${posed.length} mods confirmés en jeu.`
-              );
+            } catch {
+              pushLog("⚠️ Vérification finale impossible (profil illisible).");
             }
           }
+
+          pushLog(
+            failed === 0
+              ? `🔧 ${applied} mod${applied > 1 ? "s" : ""} confirmé${applied > 1 ? "s" : ""} en jeu.`
+              : `🔧 ${applied} posé(s), ${failed} refusé(s).`
+          );
         }
       }
+
       if (saveAsLoadout) {
         pushLog("💾 Enregistrement du loadout…");
         await sleep(300);
-        const finalRes = await fetch("/api/bungie/profile?scope=gear");
-        if (finalRes.ok) {
-          const finalProfile = (await finalRes.json()) as ProfileResponse;
+        let finalProfile: ProfileResponse | null = null;
+        try {
+          finalProfile = await fetchProfileFresh("gear");
+        } catch {
+          finalProfile = null;
+        }
+        if (finalProfile) {
           setProfile(finalProfile);
           const total = b.totals.reduce((a, v) => a + v, 0);
           const exoticName =

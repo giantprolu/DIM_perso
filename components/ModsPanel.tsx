@@ -14,16 +14,26 @@ import {
   WEAPON_STAT_HASHES,
 } from "@/lib/destiny-constants";
 import {
-  buildModSockets,
-  suggestMods,
+  bestModCombo,
+  buildItemModContext,
   verifyPlugs,
-  type ModSuggestion,
+  type ItemModContext,
+  type ModCombo,
+  type StatWeights,
 } from "@/lib/mod-engine";
-import { insertPlug, sleep } from "@/lib/d2-actions";
+import { applyModCombo } from "@/lib/mod-apply";
+import { fetchProfileFresh, sleep } from "@/lib/d2-actions";
 import type { Character, Defs, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
 type Tab = "weapons" | "armor";
+
+const WEIGHT_STEPS = [
+  { v: 0, label: "Ign" },
+  { v: 1, label: "×1" },
+  { v: 2, label: "×2" },
+  { v: 3, label: "×3" },
+];
 
 interface GearItem {
   bucketHash: number;
@@ -33,14 +43,18 @@ interface GearItem {
   icon?: string;
   isExotic: boolean;
   energyCapacity: number;
+  energyUsed: number;
 }
 
 interface Plan {
   item: GearItem;
-  suggestions: ModSuggestion[];
-  totalGain: number;
-  /** Emplacements réellement modifiables depuis le web */
-  socketCount: number;
+  context: ItemModContext;
+  combo: ModCombo;
+}
+
+/** Poids par défaut : tout compte pareil, on cherche le meilleur total. */
+function defaultWeights(stats: number[]): StatWeights {
+  return Object.fromEntries(stats.map((h) => [h, 1]));
 }
 
 export default function ModsPanel() {
@@ -51,25 +65,32 @@ export default function ModsPanel() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [selectedChar, setSelectedChar] = useState("");
   const [tab, setTab] = useState<Tab>("weapons");
-  const [weaponStat, setWeaponStat] = useState<number>(WEAPON_STAT_HASHES[3]);
-  const [armorStat, setArmorStat] = useState<number>(ARMOR_STAT_HASHES[1]);
+  const [weaponWeights, setWeaponWeights] = useState<StatWeights>(() =>
+    defaultWeights(WEAPON_STAT_HASHES)
+  );
+  const [armorWeights, setArmorWeights] = useState<StatWeights>(() =>
+    defaultWeights(ARMOR_STAT_HASHES)
+  );
+  const [fillEmpty, setFillEmpty] = useState(true);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
 
   function pushLog(m: string) {
-    setLog((prev) => [...prev.slice(-30), m]);
+    setLog((prev) => [...prev.slice(-40), m]);
   }
 
   const fetchProfile = useCallback(async (): Promise<ProfileResponse | null> => {
-    const res = await fetch("/api/bungie/profile?scope=mods");
-    if (res.status === 401) {
-      setPhase("unauth");
-      return null;
+    try {
+      const data = await fetchProfileFresh("mods");
+      setProfile(data);
+      return data;
+    } catch (e) {
+      if (e instanceof Error && /non connecté|401/.test(e.message)) {
+        setPhase("unauth");
+        return null;
+      }
+      throw e;
     }
-    const data = (await res.json()) as ProfileResponse & { error?: string };
-    if (!res.ok) throw new Error(data.error ?? "Erreur profil");
-    setProfile(data);
-    return data;
   }, []);
 
   useEffect(() => {
@@ -111,9 +132,10 @@ export default function ModsPanel() {
   }, [profile]);
 
   const buckets = tab === "weapons" ? WEAPON_SLOT_ORDER : ARMOR_SLOT_ORDER;
-  const targetStat = tab === "weapons" ? weaponStat : armorStat;
   const relevantStats =
     tab === "weapons" ? WEAPON_STAT_HASHES : ARMOR_STAT_HASHES;
+  const weights = tab === "weapons" ? weaponWeights : armorWeights;
+  const setWeights = tab === "weapons" ? setWeaponWeights : setArmorWeights;
   const categoryHash =
     tab === "weapons" ? SOCKET_CATEGORY_WEAPON_MODS : SOCKET_CATEGORY_ARMOR_MODS;
 
@@ -136,6 +158,7 @@ export default function ModsPanel() {
         isExotic: def.inventory?.tierType === TIER_EXOTIC,
         energyCapacity:
           instances[item.itemInstanceId]?.energy?.energyCapacity ?? 0,
+        energyUsed: instances[item.itemInstanceId]?.energy?.energyUsed ?? 0,
       });
     }
     return out;
@@ -144,136 +167,122 @@ export default function ModsPanel() {
   const plans: Plan[] = useMemo(() => {
     if (!defs || !profile) return [];
     return gear.map((item) => {
-      const sockets = buildModSockets({
+      const context = buildItemModContext({
         defs,
         data: profile,
         instanceId: item.instanceId,
         itemHash: item.itemHash,
         categoryHash,
-        targetStat,
         relevantStats,
         characterId: selectedChar,
-      });
-      const suggestions = suggestMods({
-        sockets,
         energyCapacity: tab === "armor" ? item.energyCapacity : 0,
+        energyUsed: tab === "armor" ? item.energyUsed : undefined,
       });
-      return {
-        item,
-        suggestions,
-        totalGain: suggestions.reduce((a, s) => a + s.gain, 0),
-        socketCount: sockets.length,
-      };
+      const combo = bestModCombo({ context, weights, fillEmpty });
+      return { item, context, combo };
     });
-  }, [defs, profile, gear, categoryHash, targetStat, relevantStats, tab]);
+  }, [
+    defs,
+    profile,
+    gear,
+    categoryHash,
+    relevantStats,
+    selectedChar,
+    tab,
+    weights,
+    fillEmpty,
+  ]);
 
-  const grandTotal = plans.reduce((a, p) => a + p.totalGain, 0);
+  const totalChanges = plans.reduce((a, p) => a + p.combo.changes.length, 0);
 
   const statName = (hash: number) =>
     defs?.stats?.[hash]?.displayProperties?.name ?? `Stat ${hash}`;
 
-  /** Pose les mods d'une pièce, puis vérifie qu'ils ont réellement tenu. */
-  async function applyPlanCore(plan: Plan) {
-    const posed: ModSuggestion[] = [];
-    for (const s of plan.suggestions) {
-      let done = false;
-      for (let attempt = 0; attempt < 2 && !done; attempt++) {
-        try {
-          await insertPlug({
-            itemId: plan.item.instanceId,
-            characterId: selectedChar,
-            socketIndex: s.socketIndex,
-            plugItemHash: s.plugHash,
-          });
-          done = true;
-        } catch (e) {
-          const raw = e instanceof Error ? e.message : "refusé";
-          // Certains emplacements ne sont pas modifiables hors du jeu :
-          // inutile d'insister, on l'explique une bonne fois.
-          if (/cannot perform that change/i.test(raw)) {
-            pushLog(
-              `⛔ ${plan.item.name} · ${s.name} : non modifiable depuis le web (à faire en jeu).`
-            );
-            break;
-          }
-          // « Refresh the item and try again » : l'objet vient de bouger,
-          // on laisse Bungie se synchroniser avant de réessayer.
-          if (attempt === 0) await sleep(900);
-          else pushLog(`⚠️ ${plan.item.name} · ${s.name} : ${raw}`);
-        }
-      }
-      if (done) {
-        posed.push(s);
-        await sleep(500);
-      }
+  /** Somme des gains nets, stat par stat, sur tout l'équipement affiché. */
+  const grandDeltas = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const p of plans) {
+      for (const [h, v] of p.combo.deltas) m.set(h, (m.get(h) ?? 0) + v);
     }
-    return posed;
-  }
+    return [...m.entries()].filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
+  }, [plans]);
 
-  async function applyPlan(plan: Plan) {
-    if (busy || plan.suggestions.length === 0) return;
-    setBusy(true);
-    try {
-      const posed = await applyPlanCore(plan);
-      await sleep(1200);
-      const fresh = await fetchProfile();
-      if (fresh && posed.length > 0) {
-        const { ok, missing } = verifyPlugs(
-          fresh,
-          plan.item.instanceId,
-          posed
-        );
-        pushLog(
-          `${missing.length === 0 ? "✅" : "⚠️"} ${plan.item.name} : ${ok}/${posed.length} mods confirmés en jeu` +
-            (missing.length > 0 ? ` — non posés : ${missing.join(", ")}` : "")
-        );
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function applyAll() {
-    if (busy) return;
+  async function applyPlans(list: Plan[]) {
+    if (busy || !defs) return;
     setBusy(true);
     setLog([]);
     pushLog(
-      `▶️ Application des mods ${tab === "weapons" ? "d'armes" : "d'armure"} — objectif ${statName(targetStat)}…`
+      `▶️ Pose de la meilleure combinaison sur ${list.length} ${
+        tab === "weapons" ? "arme(s)" : "pièce(s)"
+      }…`
     );
     try {
-      const posedByItem: { plan: Plan; posed: ModSuggestion[] }[] = [];
-      for (const plan of plans) {
-        if (plan.suggestions.length === 0) continue;
-        const posed = await applyPlanCore(plan);
-        posedByItem.push({ plan, posed });
-      }
+      let applied = 0;
+      let uncertain = 0;
+      let failed = 0;
+      const toVerify: {
+        instanceId: string;
+        name: string;
+        expected: { socketIndex: number; plugHash: number; name: string }[];
+      }[] = [];
 
-      // Vérification : seul le profil relu fait foi
-      await sleep(1200);
-      const fresh = await fetchProfile();
-      let totalOk = 0;
-      let totalExpected = 0;
-      if (fresh) {
-        for (const { plan, posed } of posedByItem) {
-          const { ok, missing } = verifyPlugs(
-            fresh,
-            plan.item.instanceId,
-            posed
-          );
-          totalOk += ok;
-          totalExpected += posed.length;
-          if (missing.length > 0) {
-            pushLog(
-              `⚠️ ${plan.item.name} : ${missing.join(", ")} non posé(s) en jeu.`
-            );
-          }
+      for (const plan of list) {
+        if (plan.combo.changes.length === 0) continue;
+        const report = await applyModCombo({
+          defs,
+          instanceId: plan.item.instanceId,
+          characterId: selectedChar,
+          itemName: plan.item.name,
+          changes: plan.combo.changes,
+          sockets: plan.context.sockets,
+          log: pushLog,
+        });
+        applied += report.applied;
+        uncertain += report.uncertain;
+        failed += report.failed;
+
+        const unconfirmed = report.outcomes
+          .filter((o) => o.status === "incertain")
+          .map((o) => ({
+            socketIndex: o.choice.socketIndex,
+            plugHash: o.choice.plugHash,
+            name: o.choice.name,
+          }));
+        if (unconfirmed.length > 0) {
+          toVerify.push({
+            instanceId: plan.item.instanceId,
+            name: plan.item.name,
+            expected: unconfirmed,
+          });
         }
       }
+
+      // Filet de sécurité : uniquement pour ce que Bungie n'a pas confirmé.
+      if (toVerify.length > 0) {
+        await sleep(1200);
+        const fresh = await fetchProfile();
+        if (fresh) {
+          for (const v of toVerify) {
+            const { ok, missing } = verifyPlugs(fresh, v.instanceId, v.expected);
+            applied += ok;
+            uncertain -= v.expected.length;
+            failed += missing.length;
+            if (missing.length > 0) {
+              pushLog(`⚠️ ${v.name} : ${missing.join(", ")} non posé(s) en jeu.`);
+            }
+          }
+        }
+      } else {
+        await fetchProfile();
+      }
+
       pushLog(
-        totalOk === totalExpected
-          ? `✅ Terminé — ${totalOk} mods confirmés en jeu.`
-          : `⚠️ ${totalOk}/${totalExpected} mods confirmés en jeu.`
+        failed === 0 && uncertain === 0
+          ? `✅ Terminé — ${applied} mod${applied > 1 ? "s" : ""} confirmé${applied > 1 ? "s" : ""} en jeu.`
+          : `⚠️ ${applied} posé(s), ${failed} refusé(s)${uncertain > 0 ? `, ${uncertain} non vérifiable(s)` : ""}.`
       );
+    } catch (e) {
+      pushLog(`❌ ${e instanceof Error ? e.message : "Erreur"}`);
     } finally {
       setBusy(false);
     }
@@ -347,33 +356,79 @@ export default function ModsPanel() {
       </div>
 
       <div className="card bg-base-200 shadow">
-        <div className="card-body p-4 flex-row flex-wrap items-center gap-3">
-          <span className="text-sm opacity-70">Stat à maximiser :</span>
-          <select
-            className="select select-bordered select-sm"
-            value={targetStat}
-            onChange={(e) =>
-              tab === "weapons"
-                ? setWeaponStat(Number(e.target.value))
-                : setArmorStat(Number(e.target.value))
-            }
-          >
+        <div className="card-body p-4 gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-medium">
+              Importance de chaque {tab === "weapons" ? "stat d'arme" : "stat d'armure"}
+            </span>
+            <button
+              className="btn btn-ghost btn-xs"
+              onClick={() => setWeights(defaultWeights(relevantStats))}
+            >
+              Réinitialiser
+            </button>
+            <label className="label cursor-pointer gap-2 py-0">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={fillEmpty}
+                onChange={(e) => setFillEmpty(e.target.checked)}
+              />
+              <span className="label-text text-xs">
+                Combler les emplacements restés vides
+              </span>
+            </label>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {relevantStats.map((h) => (
-              <option key={h} value={h}>
-                {statName(h)}
-              </option>
+              <div key={h} className="flex items-center gap-2">
+                <span className="text-xs flex-1 truncate opacity-80">
+                  {statName(h)}
+                </span>
+                <div className="join">
+                  {WEIGHT_STEPS.map((w) => (
+                    <button
+                      key={w.v}
+                      className={`btn btn-xs join-item${
+                        (weights[h] ?? 0) === w.v ? " btn-primary" : " btn-ghost"
+                      }`}
+                      onClick={() => setWeights({ ...weights, [h]: w.v })}
+                    >
+                      {w.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
-          </select>
-          <span className="badge badge-primary badge-outline">
-            gain total +{grandTotal}
-          </span>
-          <button
-            className="btn btn-primary btn-sm ml-auto"
-            disabled={busy || grandTotal === 0}
-            onClick={applyAll}
-          >
-            {busy ? "Application…" : "Tout appliquer"}
-          </button>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap border-t border-base-300 pt-3">
+            {grandDeltas.length === 0 ? (
+              <span className="badge badge-ghost">
+                déjà optimal pour ces priorités
+              </span>
+            ) : (
+              grandDeltas.map(([h, v]) => (
+                <span
+                  key={h}
+                  className={`badge badge-outline ${v > 0 ? "badge-primary" : "badge-warning"}`}
+                >
+                  {v > 0 ? "+" : ""}
+                  {v} {statName(h)}
+                </span>
+              ))
+            )}
+            <button
+              className="btn btn-primary btn-sm ml-auto"
+              disabled={busy || totalChanges === 0}
+              onClick={() => applyPlans(plans)}
+            >
+              {busy
+                ? "Application…"
+                : `Appliquer les ${totalChanges} mod${totalChanges > 1 ? "s" : ""}`}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -390,101 +445,118 @@ export default function ModsPanel() {
           Rien d&apos;équipé dans ces emplacements.
         </div>
       ) : (
-        plans.map((plan) => (
-          <div className="card bg-base-200 shadow" key={plan.item.instanceId}>
-            <div className="card-body p-4 gap-3">
-              <div className="flex items-center gap-3 flex-wrap">
-                {plan.item.icon && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    className={`item-icon${plan.item.isExotic ? " exotic" : ""}`}
-                    src={`${BUNGIE_ROOT}${plan.item.icon}`}
-                    alt=""
-                  />
-                )}
-                <div className="min-w-0">
-                  <div className="font-medium">{plan.item.name}</div>
-                  <div className="text-xs opacity-50">
-                    {tab === "weapons"
-                      ? "Arme"
-                      : `Énergie ${plan.item.energyCapacity}`}
+        plans.map((plan) => {
+          const deltas = [...plan.combo.deltas.entries()].filter(
+            ([, v]) => v !== 0
+          );
+          return (
+            <div className="card bg-base-200 shadow" key={plan.item.instanceId}>
+              <div className="card-body p-4 gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {plan.item.icon && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      className={`item-icon${plan.item.isExotic ? " exotic" : ""}`}
+                      src={`${BUNGIE_ROOT}${plan.item.icon}`}
+                      alt=""
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium">{plan.item.name}</div>
+                    <div className="text-xs opacity-50">
+                      {tab === "weapons"
+                        ? `${plan.context.sockets.length} emplacement(s) modifiable(s)`
+                        : `Énergie ${plan.combo.energyUsed}/${plan.item.energyCapacity} · ${plan.context.sockets.length} emplacement(s)`}
+                    </div>
                   </div>
-                </div>
-                <span
-                  className={`badge badge-sm ${
-                    plan.totalGain > 0 ? "badge-primary" : "badge-ghost"
-                  }`}
-                >
-                  {plan.totalGain > 0
-                    ? `+${plan.totalGain} ${statName(targetStat)}`
-                    : plan.suggestions.length > 0
-                      ? "emplacements à combler"
-                      : plan.socketCount === 0
-                        ? "aucun mod modifiable"
-                        : "déjà optimal"}
-                </span>
-                {plan.suggestions.length > 0 && (
-                  <button
-                    className="btn btn-xs btn-outline btn-primary ml-auto"
-                    disabled={busy}
-                    onClick={() => applyPlan(plan)}
-                  >
-                    Appliquer
-                  </button>
-                )}
-              </div>
-
-              {plan.suggestions.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {plan.suggestions.map((s) => (
-                    <div
-                      key={s.socketIndex}
-                      className="flex items-center gap-2 bg-base-300 rounded-box px-2 py-1.5"
+                  <div className="flex gap-1 flex-wrap">
+                    {deltas.length === 0 ? (
+                      <span className="badge badge-sm badge-ghost">
+                        {plan.context.sockets.length === 0
+                          ? "aucun mod modifiable"
+                          : "déjà optimal"}
+                      </span>
+                    ) : (
+                      deltas.map(([h, v]) => (
+                        <span
+                          key={h}
+                          className={`badge badge-sm ${v > 0 ? "badge-primary" : "badge-warning"}`}
+                        >
+                          {v > 0 ? "+" : ""}
+                          {v} {statName(h)}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  {plan.combo.changes.length > 0 && (
+                    <button
+                      className="btn btn-xs btn-outline btn-primary ml-auto"
+                      disabled={busy}
+                      onClick={() => applyPlans([plan])}
                     >
-                      {s.icon && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={`${BUNGIE_ROOT}${s.icon}`}
-                          alt=""
-                          className="w-8 h-8 rounded"
-                        />
-                      )}
-                      <div className="text-xs">
-                        <div className="font-medium">{s.name}</div>
-                        <div className="opacity-50">
-                          {s.gain > 0
-                            ? `+${s.gain}`
-                            : s.effects && s.effects.length > 0
-                              ? s.effects
-                                  .map((e) => `+${e.value} ${statName(e.statHash)}`)
+                      Appliquer
+                    </button>
+                  )}
+                </div>
+
+                {plan.combo.choices.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {plan.combo.choices.map((c) => (
+                      <div
+                        key={c.socketIndex}
+                        className={`flex items-center gap-2 rounded-box px-2 py-1.5 ${
+                          c.isChange
+                            ? "bg-base-300 ring-1 ring-primary/40"
+                            : "bg-base-300/50 opacity-60"
+                        }`}
+                      >
+                        {c.icon && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`${BUNGIE_ROOT}${c.icon}`}
+                            alt=""
+                            className="w-8 h-8 rounded"
+                          />
+                        )}
+                        <div className="text-xs">
+                          <div className="font-medium">{c.name}</div>
+                          <div className="opacity-50">
+                            {c.effects.length > 0
+                              ? c.effects
+                                  .map(
+                                    (e) =>
+                                      `${e.value > 0 ? "+" : ""}${e.value} ${statName(e.statHash)}`
+                                  )
                                   .join(" · ")
-                              : "emplacement comblé"}
-                          {s.energyCost > 0 && ` · ${s.energyCost} énergie`}
-                          {s.replaces && ` · remplace ${s.replaces}`}
+                              : "sans effet de stat"}
+                            {c.energyCost > 0 && ` · ${c.energyCost} én.`}
+                            {c.replaces && ` · remplace ${c.replaces}`}
+                            {!c.isChange && " · déjà en place"}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))
+          );
+        })
       )}
 
       <p className="text-xs opacity-50">
-        Sur les armes, seuls les <strong>mods</strong> sont modifiables depuis
-        le web : les perks du roll (canon, chargeur, trait) et les paliers de
-        chef-d&apos;œuvre sont réservés au jeu, l&apos;API Bungie les refuse.
-        Un même mod ne peut occuper qu&apos;un emplacement par pièce (le jeu le
-        déplace au lieu de le dupliquer) : les emplacements qui ne peuvent rien
-        gagner sur la stat visée reçoivent quand même le meilleur autre mod
-        disponible plutôt que de rester vides. Chaque pose est vérifiée après
-        coup sur ton profil, et le journal ne dit « confirmé » que si le mod y
-        est vraiment. Seuls les mods que tu as débloqués et réellement posables sont proposés
-        (Bungie les renvoie emplacement par emplacement). Pour l&apos;armure, le
-        budget d&apos;énergie de chaque pièce est respecté ; un mod refusé est
-        signalé dans le journal.
+        Le plan ci-dessus est la <strong>meilleure combinaison</strong> de mods
+        pour l&apos;objet entier, pas le meilleur mod emplacement par
+        emplacement : le solveur teste les combinaisons sous les contraintes
+        réelles du jeu — budget d&apos;énergie de la pièce, et un même mod qui
+        ne peut occuper qu&apos;un emplacement (le jeu le déplace au lieu de le
+        dupliquer). Aucun emplacement n&apos;est dégradé : garder le mod en
+        place fait toujours partie des options. Sur les armes, seuls les{" "}
+        <strong>mods</strong> sont modifiables depuis le web — les perks du roll
+        (canon, chargeur, trait) et les paliers de chef-d&apos;œuvre sont
+        réservés au jeu. Chaque pose est confirmée par l&apos;objet que Bungie
+        renvoie dans la foulée, et le journal ne dit « posé » que sur cette
+        confirmation.
       </p>
     </div>
   );
