@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bungiePost } from "@/lib/bungie-server";
+import { bungiePost, errorMessage, errorStatus } from "@/lib/bungie-server";
 import { getAuthContext, withRefreshedCookies } from "@/lib/auth-server";
 
 type Action = "snapshot" | "equip" | "clear" | "rename";
@@ -60,10 +60,7 @@ export async function POST(request: NextRequest) {
     return withRefreshedCookies(NextResponse.json({ ok: true }), ctx);
   } catch (e) {
     return withRefreshedCookies(
-      NextResponse.json(
-        { error: e instanceof Error ? e.message : "Erreur Bungie" },
-        { status: 502 }
-      ),
+      NextResponse.json({ error: errorMessage(e) }, { status: errorStatus(e) }),
       ctx
     );
   }

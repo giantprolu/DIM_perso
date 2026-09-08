@@ -16,13 +16,13 @@ import {
 import {
   bestModCombo,
   buildItemModContext,
-  verifyPlugs,
+  verifySockets,
   type ItemModContext,
   type ModCombo,
   type StatWeights,
 } from "@/lib/mod-engine";
 import { applyModCombo } from "@/lib/mod-apply";
-import { fetchProfileFresh, sleep } from "@/lib/d2-actions";
+import { fetchItemSockets, fetchProfileFresh, sleep } from "@/lib/d2-actions";
 import type { Character, Defs, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
@@ -258,23 +258,26 @@ export default function ModsPanel() {
       }
 
       // Filet de sécurité : uniquement pour ce que Bungie n'a pas confirmé.
+      // Une pièce se relit seule (GetItem), sans repasser par tout le profil.
       if (toVerify.length > 0) {
         await sleep(1200);
-        const fresh = await fetchProfile();
-        if (fresh) {
-          for (const v of toVerify) {
-            const { ok, missing } = verifyPlugs(fresh, v.instanceId, v.expected);
+        for (const v of toVerify) {
+          try {
+            const sockets = await fetchItemSockets(v.instanceId);
+            const { ok, missing } = verifySockets(sockets, v.expected);
             applied += ok;
             uncertain -= v.expected.length;
             failed += missing.length;
             if (missing.length > 0) {
               pushLog(`⚠️ ${v.name} : ${missing.join(", ")} non posé(s) en jeu.`);
             }
+          } catch {
+            pushLog(`⚠️ ${v.name} : vérification impossible.`);
           }
         }
-      } else {
-        await fetchProfile();
       }
+      // L'affichage, lui, a besoin du profil : les mods disponibles changent.
+      await fetchProfile();
 
       pushLog(
         failed === 0 && uncertain === 0

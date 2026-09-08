@@ -1,5 +1,5 @@
 import { BUCKET_POSTMASTER } from "./destiny-constants";
-import type { ProfileResponse, SocketState } from "./types";
+import type { ItemResponse, ProfileResponse, SocketState } from "./types";
 
 /** POST JSON vers nos routes /api/d2/*, avec remontée d'erreur lisible. */
 async function apiPost<T = { ok: boolean }>(
@@ -102,6 +102,27 @@ export async function fetchProfileFresh(
     throw new Error(json?.error ?? `profil illisible (HTTP ${res.status})`);
   }
   return json;
+}
+
+/**
+ * Emplacements d'UNE instance, sans relire tout le profil.
+ *
+ * Vérifier une pose de mod ne demande que les sockets d'un objet : passer par
+ * le profil complet coûtait plusieurs mégaoctets pour lire six cases.
+ */
+export async function fetchItemSockets(
+  instanceId: string
+): Promise<SocketState[]> {
+  const res = await fetch(`/api/bungie/item?id=${instanceId}&t=${Date.now()}`, {
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => null)) as
+    | (ItemResponse & { error?: string })
+    | null;
+  if (!res.ok || !json || json.error) {
+    throw new Error(json?.error ?? `objet illisible (HTTP ${res.status})`);
+  }
+  return json.sockets?.data?.sockets ?? [];
 }
 
 export interface ItemLocation {

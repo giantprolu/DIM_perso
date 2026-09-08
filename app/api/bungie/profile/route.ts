@@ -1,20 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bungieGet, refreshTokens, type TokenResponse } from "@/lib/bungie-server";
-import {
-  COOKIE_ACCESS,
-  COOKIE_EXPIRES,
-  COOKIE_MEMBERSHIP,
-  COOKIE_REFRESH,
-  cookieOpts,
-  type MembershipCookie,
-} from "@/lib/auth-cookies";
+import { bungieGet, errorMessage, errorStatus } from "@/lib/bungie-server";
+import { getAuthContext, withRefreshedCookies } from "@/lib/auth-server";
 import type { ProfileResponse } from "@/lib/types";
 
 /** Composants Bungie par usage, pour ne demander que le nécessaire. */
 const SCOPES: Record<string, string> = {
   // 100 profil (saison, rang), 200 personnages, 201 inventaires,
-  // 301 objectifs d'items, 900 archives (défis, rangs)
-  quests: "100,200,201,301,900",
+  // 301 objectifs d'items, 900 archives (défis, rangs),
+  // 1200 variables de texte (les objectifs affichent « {var:…} » sans elles)
+  quests: "100,200,201,301,900,1200",
   // 102 coffre, 205 équipé, 206 loadouts en jeu, 300 instances,
   // 304 stats, 305 sockets
   gear: "102,200,201,205,206,300,304,305",
@@ -22,6 +16,8 @@ const SCOPES: Record<string, string> = {
   mods: "200,205,300,304,305,310",
   // Perso : équipé + coffre + inventaires, pour proposer les alternatives
   perso: "102,200,201,205,300,304,305,310",
+  // La liste des personnages, et rien d'autre
+  characters: "200",
   // Maître des postes : inventaires de personnage + instances (puissance)
   postmaster: "200,201,300",
   // Équipement porté + sockets + mods réellement insérables (310) :
@@ -39,56 +35,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "scope inconnu" }, { status: 400 });
   }
 
-  let access = request.cookies.get(COOKIE_ACCESS)?.value ?? null;
-  const refresh = request.cookies.get(COOKIE_REFRESH)?.value ?? null;
-  const exp = Number(request.cookies.get(COOKIE_EXPIRES)?.value ?? 0);
-  const memRaw = request.cookies.get(COOKIE_MEMBERSHIP)?.value;
-
-  if (!memRaw || (!access && !refresh)) {
-    return NextResponse.json({ error: "non connecté" }, { status: 401 });
-  }
-
-  let mem: MembershipCookie;
-  try {
-    mem = JSON.parse(memRaw) as MembershipCookie;
-  } catch {
-    return NextResponse.json({ error: "non connecté" }, { status: 401 });
-  }
-
-  // Refresh si le token expire dans moins d'une minute
-  let refreshed: TokenResponse | null = null;
-  if ((!access || Date.now() > exp - 60_000) && refresh) {
-    try {
-      refreshed = await refreshTokens(refresh);
-      access = refreshed.access_token;
-    } catch {
-      return NextResponse.json({ error: "session expirée" }, { status: 401 });
-    }
-  }
-  if (!access) {
-    return NextResponse.json({ error: "non connecté" }, { status: 401 });
-  }
+  const ctx = await getAuthContext(request);
+  if (!ctx) return NextResponse.json({ error: "non connecté" }, { status: 401 });
 
   try {
     const profile = await bungieGet<ProfileResponse>(
-      `/Destiny2/${mem.t}/Profile/${mem.i}/?components=${components}`,
-      access
+      `/Destiny2/${ctx.mem.t}/Profile/${ctx.mem.i}/?components=${components}`,
+      ctx.access
     );
     const res = NextResponse.json(profile);
     // Le profil change à chaque action (équipement, mod posé) : jamais de cache,
     // ni navigateur ni proxy, sinon on relit un état périmé juste après écriture.
     res.headers.set("Cache-Control", "no-store, max-age=0");
-    if (refreshed) {
-      const ttl = refreshed.refresh_expires_in;
-      res.cookies.set(COOKIE_ACCESS, refreshed.access_token, cookieOpts(refreshed.expires_in));
-      res.cookies.set(COOKIE_REFRESH, refreshed.refresh_token, cookieOpts(ttl));
-      res.cookies.set(COOKIE_EXPIRES, String(Date.now() + refreshed.expires_in * 1000), cookieOpts(ttl));
-    }
-    return res;
+    return withRefreshedCookies(res, ctx);
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Erreur Bungie" },
-      { status: 502 }
+    return withRefreshedCookies(
+      NextResponse.json({ error: errorMessage(e) }, { status: errorStatus(e) }),
+      ctx
     );
   }
 }

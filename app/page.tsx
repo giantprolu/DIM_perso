@@ -27,9 +27,19 @@ const CARDS = [
     desc: "Tout ce qui t'attend, sur tous tes personnages — récupérable en un clic ou automatiquement.",
   },
   {
+    href: "/semaine",
+    title: "Cette semaine",
+    desc: "Jalons hebdomadaires, modificateurs du moment, réputations et artefact — ce qu'il reste à faire avant le reset.",
+  },
+  {
     href: "/quests",
     title: "Quêtes & progression",
     desc: "Poursuites, défis saisonniers et rangs de Gardien, avec la progression de chaque objectif.",
+  },
+  {
+    href: "/activite",
+    title: "Activité",
+    desc: "Tes dernières parties avec le rapport de fin détaillé, tes stats de carrière et tes armes les plus utilisées.",
   },
   {
     href: "/armes",

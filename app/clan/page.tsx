@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import { fetchPlayer, cachedPlayer, type PlayerData } from "@/lib/player-client";
 import PlayerHoverCard, {
@@ -8,7 +15,7 @@ import PlayerHoverCard, {
   type HoverMember,
 } from "@/components/PlayerHoverCard";
 import PlayerModal, { type ModalTarget } from "@/components/PlayerModal";
-import type { Defs } from "@/lib/types";
+import type { Defs, PlayerSearchResult } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "none" | "error";
 
@@ -145,6 +152,52 @@ export default function ClanPage() {
   const hoverKey = useRef("");
 
   const [modalTarget, setModalTarget] = useState<ModalTarget | null>(null);
+
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PlayerSearchResult[] | null>(
+    null
+  );
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState("");
+
+  /** Cherche un Gardien par nom Bungie, membre du clan ou non. */
+  async function runSearch(e: FormEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    if (q.length < 3) {
+      setSearchError("Tape au moins 3 caractères.");
+      return;
+    }
+    setSearchBusy(true);
+    setSearchError("");
+    try {
+      const res = await fetch(`/api/bungie/search-player?q=${encodeURIComponent(q)}`);
+      const data = (await res.json()) as {
+        results?: PlayerSearchResult[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Recherche impossible");
+      setSearchResults(data.results ?? []);
+    } catch (err) {
+      setSearchResults(null);
+      setSearchError(err instanceof Error ? err.message : "Recherche impossible");
+    } finally {
+      setSearchBusy(false);
+    }
+  }
+
+  /** Un joueur trouvé s'ouvre dans la même fiche qu'un membre du clan. */
+  function openFoundPlayer(player: PlayerSearchResult) {
+    setModalTarget({
+      membershipType: player.membershipType,
+      membershipId: player.membershipId,
+      name: player.name,
+      code: player.code,
+      icon: player.icon,
+      role: "Hors clan",
+      lastSeen: "—",
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -374,6 +427,73 @@ export default function ClanPage() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="card bg-base-200 shadow">
+        <div className="card-body p-4 gap-3">
+          <form className="flex gap-2 flex-wrap items-center" onSubmit={runSearch}>
+            <input
+              className="input input-sm input-bordered flex-1 min-w-[220px]"
+              placeholder="Chercher un Gardien : Nom ou Nom#1234"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button className="btn btn-sm btn-primary" disabled={searchBusy}>
+              {searchBusy ? "Recherche…" : "Chercher"}
+            </button>
+            {searchResults !== null && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  setSearchResults(null);
+                  setQuery("");
+                }}
+              >
+                Effacer
+              </button>
+            )}
+          </form>
+
+          {searchError && (
+            <div role="alert" className="alert alert-warning text-sm">
+              <span>{searchError}</span>
+            </div>
+          )}
+
+          {searchResults !== null &&
+            (searchResults.length === 0 ? (
+              <p className="text-sm opacity-60">
+                Aucun Gardien trouvé. Le nom exact « Nom#1234 » donne toujours un
+                résultat s&apos;il existe.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {searchResults.map((player) => (
+                  <button
+                    key={`${player.membershipType}-${player.membershipId}`}
+                    className="btn btn-ghost btn-sm justify-start gap-2 font-normal"
+                    onClick={() => openFoundPlayer(player)}
+                  >
+                    {player.icon && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        className="w-5 h-5 rounded"
+                        src={`${BUNGIE_ROOT}${player.icon}`}
+                        alt=""
+                      />
+                    )}
+                    <span className="font-medium">{player.name}</span>
+                    {player.code !== undefined && (
+                      <span className="opacity-50 text-xs">
+                        #{String(player.code).padStart(4, "0")}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ))}
         </div>
       </div>
 

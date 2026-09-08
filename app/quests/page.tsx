@@ -14,6 +14,11 @@ import {
   RECORD_STATE_REDEEMED,
 } from "@/lib/destiny-constants";
 import { setTracked } from "@/lib/d2-actions";
+import {
+  fillVariables,
+  readStringVariables,
+  type StringVariables,
+} from "@/lib/string-variables";
 import type {
   Character,
   Defs,
@@ -105,9 +110,13 @@ function collectRecordHashes(
 function ObjectiveBar({
   objective,
   defs,
+  vars,
+  characterId,
 }: {
   objective: ObjectiveProgress;
   defs: Defs | null;
+  vars: StringVariables | null;
+  characterId: string;
 }) {
   const objDef = defs?.objectives[objective.objectiveHash];
   const cv = objective.completionValue || objDef?.completionValue || 0;
@@ -117,7 +126,8 @@ function ObjectiveBar({
     <div>
       <div className="flex items-baseline justify-between gap-2 text-xs opacity-80">
         <span className="truncate">
-          {objDef?.progressDescription || "Progression"}
+          {fillVariables(objDef?.progressDescription, vars, characterId) ||
+            "Progression"}
         </span>
         <span
           className={
@@ -220,6 +230,15 @@ export default function QuestsPage() {
     );
   }, [profile]);
 
+  /**
+   * Valeurs des variables citées par les libellés (composant 1200) : sans
+   * elles, un objectif reste affiché « Éliminez {var:…} ennemis ».
+   */
+  const vars = useMemo(
+    () => (profile ? readStringVariables(profile) : null),
+    [profile]
+  );
+
   // ---------- Poursuites ----------
   const pursuits: PursuitVM[] = useMemo(() => {
     if (!defs || !profile || !selectedChar) return [];
@@ -249,7 +268,11 @@ export default function QuestsPage() {
           ? "Classifié"
           : def?.displayProperties?.name || `Objet ${item.itemHash}`,
         typeName: def?.itemTypeDisplayName ?? "",
-        description: def?.displayProperties?.description ?? "",
+        description: fillVariables(
+          def?.displayProperties?.description,
+          vars,
+          selectedChar
+        ),
         icon: def?.displayProperties?.icon,
         isBounty: def?.itemType === ITEM_TYPE_BOUNTY,
         isQuest:
@@ -269,7 +292,7 @@ export default function QuestsPage() {
       return a.name.localeCompare(b.name, "fr");
     });
     return list;
-  }, [defs, profile, selectedChar]);
+  }, [defs, profile, selectedChar, vars]);
 
   const shownPursuits = useMemo(() => {
     const f = filter.trim().toLowerCase();
@@ -311,7 +334,11 @@ export default function QuestsPage() {
     return {
       hash,
       name,
-      description: def.displayProperties?.description ?? "",
+      description: fillVariables(
+        def.displayProperties?.description,
+        vars,
+        selectedChar
+      ),
       icon: def.displayProperties?.icon,
       objectives,
       complete,
@@ -351,7 +378,7 @@ export default function QuestsPage() {
     }
     return groups;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defs, profile, selectedChar]);
+  }, [defs, profile, selectedChar, vars]);
 
   const ranks = useMemo(() => {
     if (!defs) return [];
@@ -456,7 +483,13 @@ export default function QuestsPage() {
               )}
               <div className="flex flex-col gap-2 mt-3">
                 {objectives.map((o) => (
-                  <ObjectiveBar key={o.objectiveHash} objective={o} defs={defs} />
+                  <ObjectiveBar
+                    key={o.objectiveHash}
+                    objective={o}
+                    defs={defs}
+                    vars={vars}
+                    characterId={selectedChar}
+                  />
                 ))}
               </div>
             </div>

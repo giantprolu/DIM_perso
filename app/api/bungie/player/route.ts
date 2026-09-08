@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bungieGet } from "@/lib/bungie-server";
+import { bungieGet, errorMessage, errorStatus } from "@/lib/bungie-server";
 import { getAuthContext, withRefreshedCookies } from "@/lib/auth-server";
 import type { ProfileResponse } from "@/lib/types";
 
@@ -70,10 +70,7 @@ export async function GET(request: NextRequest) {
     return withRefreshedCookies(res, ctx);
   } catch (e) {
     return withRefreshedCookies(
-      NextResponse.json(
-        { error: e instanceof Error ? e.message : "Erreur Bungie" },
-        { status: 502 }
-      ),
+      NextResponse.json({ error: errorMessage(e) }, { status: errorStatus(e) }),
       ctx
     );
   }

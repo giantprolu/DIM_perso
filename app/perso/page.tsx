@@ -673,7 +673,7 @@ export default function PersoPage() {
                   </span>
                 ) : (
                   detail.stats.map((s) => (
-                    <div key={s.hash} className="flex items-center gap-2">
+                    <div key={s.hash} className="flex items-center gap-2.5">
                       <span className="text-[11px] w-32 opacity-70 truncate">
                         {s.name}
                       </span>
@@ -682,7 +682,7 @@ export default function PersoPage() {
                         value={s.value}
                         max={s.max}
                       />
-                      <span className="text-[11px] font-mono w-8 text-right">
+                      <span className="text-[11px] font-mono w-10 text-right tabular-nums">
                         {s.value}
                       </span>
                     </div>

@@ -7,7 +7,7 @@ import {
   ARMOR_MOD_CATEGORY,
   bestModCombo,
   buildItemModContext,
-  verifyPlugs,
+  verifySockets,
   type StatWeights,
 } from "@/lib/mod-engine";
 import { applyModCombo } from "@/lib/mod-apply";
@@ -33,6 +33,7 @@ import {
 import {
   buildLocationMap,
   equipItems,
+  fetchItemSockets,
   fetchProfileFresh,
   moveToCharacter,
   sleep,
@@ -510,17 +511,15 @@ export default function OptimizerPage() {
             }
           }
 
-          // Filet de sécurité, uniquement pour ce que Bungie n'a pas confirmé
+          // Filet de sécurité, uniquement pour ce que Bungie n'a pas confirmé.
+          // On relit les pièces concernées une par une (GetItem) : quelques
+          // kilo-octets au lieu du profil entier.
           if (toVerify.length > 0) {
             await sleep(1200);
-            try {
-              const checkData = await fetchProfileFresh("equipped");
-              for (const v of toVerify) {
-                const { ok, missing } = verifyPlugs(
-                  checkData,
-                  v.instanceId,
-                  v.expected
-                );
+            for (const v of toVerify) {
+              try {
+                const sockets = await fetchItemSockets(v.instanceId);
+                const { ok, missing } = verifySockets(sockets, v.expected);
                 applied += ok;
                 failed += missing.length;
                 if (missing.length > 0) {
@@ -528,9 +527,9 @@ export default function OptimizerPage() {
                     `⚠️ ${v.name} : ${missing.join(", ")} non posé(s) en jeu.`
                   );
                 }
+              } catch {
+                pushLog(`⚠️ ${v.name} : vérification impossible.`);
               }
-            } catch {
-              pushLog("⚠️ Vérification finale impossible (profil illisible).");
             }
           }
 

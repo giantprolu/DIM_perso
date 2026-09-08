@@ -37,6 +37,11 @@ const TABLES = [
   "DestinyActivityDefinition",
   "DestinyActivityModeDefinition",
   "DestinyRaceDefinition",
+  "DestinyMilestoneDefinition",
+  "DestinyProgressionDefinition",
+  "DestinyFactionDefinition",
+  "DestinyActivityModifierDefinition",
+  "DestinyArtifactDefinition",
 ] as const;
 
 /** Change quand la liste des tables évolue → invalide les caches. */
@@ -161,6 +166,11 @@ export async function loadDefs(onProgress: (msg: string) => void): Promise<Defs>
       activities: tables["DestinyActivityDefinition"],
       activityModes: tables["DestinyActivityModeDefinition"],
       races: tables["DestinyRaceDefinition"],
+      milestones: tables["DestinyMilestoneDefinition"],
+      progressions: tables["DestinyProgressionDefinition"],
+      factions: tables["DestinyFactionDefinition"],
+      activityModifiers: tables["DestinyActivityModifierDefinition"],
+      artifacts: tables["DestinyArtifactDefinition"],
     } as Defs;
 
     memoryCache = { schema: SCHEMA, defs };

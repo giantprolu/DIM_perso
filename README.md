@@ -4,9 +4,20 @@ Compagnon Destiny 2 minimaliste, à usage personnel, dans l'esprit de
 [Destiny Item Manager](https://destinyitemmanager.com/) mais réduit à
 l'essentiel :
 
+- **Cette semaine** — les **jalons** de chaque personnage tels que le jeu les
+  connaît : activités hebdomadaires, défis en cours, coffre déjà pris ou non,
+  et le temps restant avant le reset. Plus la **rotation publique** (activités
+  du moment et leurs **modificateurs**), tes **réputations** avec la
+  progression vers le prochain rang, et le niveau de l'**artefact saisonnier**
+  avec son bonus de puissance.
 - **Quêtes & progression** — poursuites (quêtes, primes) de chaque
   personnage, **défis saisonniers** groupés par semaine et objectifs des
   **rangs de Gardien**, avec la progression détaillée de chaque objectif.
+- **Activité** — tes dernières parties (filtrables par mode), chacune ouvrant
+  le **rapport de fin de partie** complet : tous les joueurs, leur classe, leur
+  puissance, leur score et leur K/D. Plus tes **statistiques de carrière**, tes
+  **armes les plus utilisées** et tes **complétions par activité** (raids
+  terminés, meilleur temps…).
 - **Armes** — tout l'arsenal (coffre + personnages + équipé) avec perks et
   mods équipés, filtrable par emplacement, élément, rareté et recherche
   (y compris par nom de perk).
@@ -26,6 +37,10 @@ l'essentiel :
   actuel, ou pousse un loadout du site dans un slot (application puis
   `SnapshotLoadout`) : il apparaît directement dans le menu de personnage
   en jeu.
+- **Clan** — le roster complet (toutes les pages, pas seulement les 50
+  premiers), avec fiche détaillée au survol et au clic. Une **recherche par
+  nom Bungie** (`Nom` ou `Nom#1234`) ouvre la même fiche pour n'importe quel
+  Gardien, membre du clan ou non.
 - **Actions en jeu** — équiper une arme ou l'envoyer au coffre directement
   depuis la page Armes.
 
@@ -96,12 +111,21 @@ auto-signé).
 ```
 app/
   api/auth/…        Flux OAuth Bungie (login, callback, logout, session)
-  api/bungie/…      Proxys authentifiés (manifest, profil) — API key côté serveur
+  api/bungie/…      Proxys authentifiés — API key côté serveur
+                    manifest · profile · weekly · activity · item ·
+                    vendors · clan · player · search-player
+  api/d2/…          Actions en jeu (équiper, transférer, mods, loadouts…)
+  semaine/          Jalons, rotation publique, réputations, artefact
   quests/           Suivi des poursuites par personnage
+  activite/         Historique, rapports de fin de partie, statistiques
   optimizer/        Optimiseur d'armure
 lib/
-  bungie-server.ts  Client Platform API + échange/refresh des tokens
+  bungie-server.ts  Client Platform API : erreurs typées, rejeu, tokens
+  auth-server.ts    Cookies de session + rafraîchissement des tokens
   manifest-client.ts  Téléchargement + cache IndexedDB du manifest (fr)
+  weekly-engine.ts  Jalons, réputations et artefact → vues affichables
+  activity-client.ts Historique et statistiques → lignes affichables
+  string-variables.ts Substitution des « {var:…} » dans les libellés
   optimizer-engine.ts Énumération des combinaisons, poids, minimums, exotique
   destiny-constants.ts Hashs (buckets, stats, types d'objets)
 ```
@@ -117,6 +141,23 @@ Choix notables :
 - Le moteur pré-trie chaque emplacement par score pondéré et tronque les
   candidats pour rester instantané, en conservant toujours l'exotique
   verrouillé.
+- Les libellés Bungie contiennent des variables (`{var:1234}`) dont la valeur
+  dépend du compte : le composant **StringVariables** est demandé avec le
+  profil et `lib/string-variables.ts` les substitue, faute de quoi les
+  objectifs s'afficheraient tels quels.
+- Aucune liste de hashs codée en dur pour les jalons et les réputations : ils
+  sont reconnus à leur forme (nom, icône de rang, paliers), pour que la page
+  survive au changement de saison.
+- Les erreurs Bungie sont typées (`BungieApiError`) : maintenance du mardi,
+  limitation de débit et profil privé donnent des messages distincts, et les
+  requêtes throttlées ou tombées sur une erreur serveur sont rejouées avec le
+  délai que Bungie indique.
+- Les refresh tokens Bungie sont à usage unique ; comme plusieurs requêtes
+  partent en parallèle avec le même cookie, `bungie-server.ts` mutualise le
+  renouvellement et garde le résultat une minute — sans quoi la session
+  sautait au hasard.
+- Vérifier une pose de mod passe par `GetItem` (une instance) plutôt que par
+  une relecture du profil complet.
 
 ## Actions en jeu : bon à savoir
 
@@ -137,6 +178,12 @@ Choix notables :
   fidèle dans la quasi-totalité des cas.
 - Bonus de set, archétypes et mods d'accord pas encore simulés dans le
   score.
-- Pas de transfert d'objets ni de sauvegarde de loadouts (lecture seule).
 - Manifest en français uniquement (constante à changer dans
   `lib/manifest-client.ts` si besoin).
+- Les statistiques de carrière dépendent de ce que Bungie accepte de
+  renvoyer : `GetLeaderboards` est annoncé « not yet implemented » côté
+  Bungie, et les endpoints `Fireteam/*` correspondent au LFG bungie.net
+  historique, pas au Chercheur d'escouade en jeu.
+- Pistes suivantes : catalyseurs et motifs d'armes façonnées (composants
+  `ItemPlugObjectives` + `Craftables`), collections et triomphes
+  (`PresentationNodes`), escouade en direct (`Transitory`).

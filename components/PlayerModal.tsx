@@ -269,9 +269,17 @@ export default function PlayerModal({
 
                   <div>
                     <div className="text-sm font-medium mb-2">Statistiques</div>
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {/*
+                      L'espacement horizontal entre colonnes est plus large que
+                      l'espacement interne : sans lui, la valeur d'une stat se
+                      lit comme le libellé de la colonne suivante.
+                    */}
+                    <div className="grid gap-y-2 gap-x-8 sm:grid-cols-2 lg:grid-cols-3">
                       {character.stats.map((v, i) => (
-                        <div key={ARMOR_STAT_HASHES[i]} className="flex items-center gap-2">
+                        <div
+                          key={ARMOR_STAT_HASHES[i]}
+                          className="flex items-center gap-2.5"
+                        >
                           <span className="text-xs opacity-70 w-24 truncate">
                             {statNames[i]}
                           </span>
@@ -280,7 +288,7 @@ export default function PlayerModal({
                             value={Math.min(v, 200)}
                             max={200}
                           />
-                          <span className="text-xs font-mono w-8 text-right">
+                          <span className="text-xs font-mono w-10 text-right tabular-nums">
                             {v}
                           </span>
                         </div>

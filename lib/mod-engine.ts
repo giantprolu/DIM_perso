@@ -623,17 +623,14 @@ export const WEAPON_MOD_CATEGORY = SOCKET_CATEGORY_WEAPON_MODS;
 export const ARMOR_MOD_CATEGORY = SOCKET_CATEGORY_ARMOR_MODS;
 
 /**
- * Vérifie, profil fraîchement relu à l'appui, que les mods attendus sont
- * réellement en place. Filet de sécurité : la confirmation de référence est
- * l'objet renvoyé par Bungie au moment même de l'insertion.
+ * Vérifie, emplacements fraîchement relus à l'appui, que les mods attendus
+ * sont réellement en place. Filet de sécurité : la confirmation de référence
+ * reste l'objet renvoyé par Bungie au moment même de l'insertion.
  */
-export function verifyPlugs(
-  data: ProfileResponse,
-  instanceId: string,
+export function verifySockets(
+  sockets: SocketState[],
   expected: { socketIndex: number; plugHash: number; name: string }[]
 ): { ok: number; missing: string[] } {
-  const sockets =
-    data.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
   let ok = 0;
   const missing: string[] = [];
   for (const e of expected) {

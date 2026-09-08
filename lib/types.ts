@@ -186,6 +186,68 @@ export interface GuardianRankDef {
   presentationNodeHash?: number;
 }
 
+/** Un jalon : activité hebdomadaire, quête à étapes, événement. */
+export interface MilestoneDef {
+  hash: number;
+  displayProperties?: DisplayProperties;
+  image?: string;
+  /** 0 inconnu, 1 tutoriel, 2 unique, 3 hebdomadaire, 4 quotidien, 5 spécial */
+  milestoneType?: number;
+  friendlyName?: string;
+  showInMilestones?: boolean;
+  isInGameMilestone?: boolean;
+  hasPredictableDates?: boolean;
+  quests?: Record<
+    string,
+    { displayProperties?: DisplayProperties; overrideImage?: string }
+  >;
+  rewards?: Record<
+    string,
+    {
+      categoryHash: number;
+      displayProperties?: DisplayProperties;
+      rewardEntries?: Record<
+        string,
+        { rewardEntryHash: number; displayProperties?: DisplayProperties }
+      >;
+    }
+  >;
+  redacted?: boolean;
+}
+
+/** Un rang de réputation (Avant-garde, Creuset, saison…). */
+export interface ProgressionDef {
+  hash: number;
+  displayProperties?: DisplayProperties;
+  /** 0 compte, 1 personnage, 2 clan… (DestinyProgressionScope) */
+  scope?: number;
+  repeatLastStep?: boolean;
+  factionHash?: number;
+  rankIcon?: string;
+  steps?: { stepName?: string; progressTotal?: number; icon?: string }[];
+  visible?: boolean;
+  redacted?: boolean;
+}
+
+export interface FactionDef {
+  hash: number;
+  displayProperties?: DisplayProperties;
+  progressionHash?: number;
+}
+
+/** Modificateur d'activité (« Brûlure solaire », « Champions »…). */
+export interface ActivityModifierDef {
+  hash: number;
+  displayProperties?: DisplayProperties;
+  displayInActivitySelection?: boolean;
+  displayInNavMode?: boolean;
+}
+
+export interface ArtifactDef {
+  hash: number;
+  displayProperties?: DisplayProperties;
+}
+
 export interface Defs {
   items: Record<string, ItemDef>;
   objectives: Record<string, ObjectiveDef>;
@@ -208,6 +270,11 @@ export interface Defs {
   activities: Record<string, ActivityDef>;
   activityModes: Record<string, ActivityModeDef>;
   races: Record<string, RaceDef>;
+  milestones: Record<string, MilestoneDef>;
+  progressions: Record<string, ProgressionDef>;
+  factions: Record<string, FactionDef>;
+  activityModifiers: Record<string, ActivityModifierDef>;
+  artifacts: Record<string, ArtifactDef>;
 }
 
 // ---- Profil ----
@@ -399,6 +466,20 @@ export interface ProfileResponse {
   characterRecords?: {
     data?: Record<string, { records?: Record<string, RecordComponent> }>;
   };
+  /** Artefact saisonnier vu du compte (composant 104) */
+  profileProgression?: { data?: { seasonalArtifact?: SeasonalArtifact } };
+  /** Jalons, réputations et artefact, par personnage (composant 202) */
+  characterProgressions?: { data?: Record<string, CharacterProgressions> };
+  /**
+   * Valeurs des variables citées par les libellés (composant 1200).
+   * Sans elles, un objectif s'affiche « Éliminez {var:123} ennemis ».
+   */
+  profileStringVariables?: {
+    data?: { integerValuesByHash?: Record<string, number> };
+  };
+  characterStringVariables?: {
+    data?: Record<string, { integerValuesByHash?: Record<string, number> }>;
+  };
   itemComponents?: {
     objectives?: {
       data?: Record<string, { objectives: ObjectiveProgress[] }>;
@@ -430,6 +511,210 @@ export interface ProfileResponse {
     string,
     { objectives?: { data?: Record<string, { objectives: ObjectiveProgress[] }> } }
   >;
+}
+
+// ---- Progression (composants 104 / 202 / 1200) ----
+
+/** Un rang en cours : niveau atteint et progression vers le suivant. */
+export interface ProgressionState {
+  progressionHash: number;
+  level: number;
+  levelCap?: number;
+  stepIndex?: number;
+  progressToNextLevel?: number;
+  nextLevelAt?: number;
+  currentProgress?: number;
+  weeklyProgress?: number;
+  weeklyLimit?: number;
+  dailyProgress?: number;
+  currentResetCount?: number;
+  seasonResets?: { season: number; resets: number }[];
+}
+
+/** Artefact saisonnier : les points gagnés et le bonus de puissance qu'il donne. */
+export interface SeasonalArtifact {
+  artifactHash: number;
+  pointsAcquired?: number;
+  powerBonus?: number;
+  pointProgression?: ProgressionState;
+  powerBonusProgression?: ProgressionState;
+}
+
+export interface MilestoneActivityState {
+  activityHash: number;
+  challenges?: { objective: ObjectiveProgress }[];
+  modifierHashes?: number[];
+  phases?: { phaseHash: number; complete: boolean }[];
+  booleanActivityOptions?: Record<string, boolean>;
+}
+
+export interface MilestoneQuestState {
+  questItemHash: number;
+  status?: {
+    questHash: number;
+    stepHash?: number;
+    stepObjectives?: ObjectiveProgress[];
+    completed?: boolean;
+    redeemed?: boolean;
+    started?: boolean;
+    tracked?: boolean;
+  };
+  activity?: MilestoneActivityState;
+  challenges?: { objective: ObjectiveProgress }[];
+}
+
+/** Un jalon tel que le personnage le vit : progression et récompenses. */
+export interface MilestoneState {
+  milestoneHash: number;
+  availableQuests?: MilestoneQuestState[];
+  activities?: MilestoneActivityState[];
+  rewards?: {
+    rewardCategoryHash: number;
+    entries?: { rewardEntryHash: number; earned: boolean; redeemed: boolean }[];
+  }[];
+  values?: Record<string, number>;
+  startDate?: string;
+  endDate?: string;
+  order?: number;
+}
+
+/** La rotation publique, identique pour tout le monde (GetPublicMilestones). */
+export interface PublicMilestone {
+  milestoneHash: number;
+  activities?: {
+    activityHash: number;
+    modifierHashes?: number[];
+    challengeObjectiveHashes?: number[];
+    loadoutRequirementIndex?: number;
+  }[];
+  availableQuests?: { questItemHash: number }[];
+  startDate?: string;
+  endDate?: string;
+  order?: number;
+}
+
+export interface CharacterProgressions {
+  progressions?: Record<string, ProgressionState>;
+  factions?: Record<string, ProgressionState & { factionHash: number }>;
+  milestones?: Record<string, MilestoneState>;
+  seasonalArtifact?: SeasonalArtifact;
+}
+
+// ---- Historique et statistiques ----
+
+export interface StatsValue {
+  basic?: { value?: number; displayValue?: string };
+}
+
+export interface ActivityHistoryEntry {
+  period: string;
+  activityDetails: {
+    referenceId: number;
+    directorActivityHash: number;
+    instanceId: string;
+    mode?: number;
+    modes?: number[];
+    isPrivate?: boolean;
+  };
+  values?: Record<string, StatsValue>;
+}
+
+export interface ActivityHistoryPage {
+  activities?: ActivityHistoryEntry[];
+}
+
+export interface PgcrEntry {
+  standing?: number;
+  score?: StatsValue;
+  characterId: string;
+  player: {
+    destinyUserInfo: UserInfoCard;
+    characterClass?: string;
+    classHash?: number;
+    lightLevel?: number;
+    clanName?: string;
+    clanTag?: string;
+    emblemHash?: number;
+  };
+  values?: Record<string, StatsValue>;
+}
+
+export interface PostGameCarnageReport {
+  period: string;
+  activityDetails: {
+    referenceId: number;
+    directorActivityHash: number;
+    instanceId: string;
+    mode?: number;
+    modes?: number[];
+  };
+  entries?: PgcrEntry[];
+  teams?: {
+    teamId: number;
+    standing?: StatsValue;
+    score?: StatsValue;
+    teamName?: string;
+  }[];
+  activityWasStartedFromBeginning?: boolean;
+}
+
+export interface UniqueWeaponResults {
+  weapons?: { referenceId: number; values?: Record<string, StatsValue> }[];
+}
+
+export interface AggregateActivityResults {
+  activities?: { activityHash: number; values?: Record<string, StatsValue> }[];
+}
+
+export interface AccountHistoricalStats {
+  mergedAllCharacters?: {
+    results?: Record<string, { allTime?: Record<string, StatsValue> }>;
+  };
+  characters?: {
+    characterId: string;
+    deleted?: boolean;
+    results?: Record<string, { allTime?: Record<string, StatsValue> }>;
+  }[];
+}
+
+// ---- Comptes et recherche ----
+
+export interface UserInfoCard {
+  membershipType: number;
+  membershipId: string;
+  displayName?: string;
+  bungieGlobalDisplayName?: string;
+  bungieGlobalDisplayNameCode?: number;
+  iconPath?: string;
+  crossSaveOverride?: number;
+  applicableMembershipTypes?: number[];
+  isPublic?: boolean;
+}
+
+export interface PlayerSearchResult {
+  membershipType: number;
+  membershipId: string;
+  name: string;
+  code?: number;
+  icon?: string;
+  platforms: number[];
+}
+
+/** Réponse de GetItem : une seule instance, ses stats et ses emplacements. */
+export interface ItemResponse {
+  characterId?: string;
+  item?: { data?: ProfileItem };
+  instance?: {
+    data?: {
+      primaryStat?: { value: number };
+      damageTypeHash?: number;
+      energy?: { energyCapacity: number; energyUsed?: number };
+    };
+  };
+  stats?: {
+    data?: { stats?: Record<string, { statHash: number; value: number }> };
+  };
+  sockets?: { data?: { sockets?: SocketState[] } };
 }
 
 export interface SessionInfo {

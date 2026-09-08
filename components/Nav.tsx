@@ -8,7 +8,9 @@ import type { SessionInfo } from "@/lib/types";
 const LINKS = [
   { href: "/", label: "Tableau de bord" },
   { href: "/perso", label: "Personnage" },
+  { href: "/semaine", label: "Semaine" },
   { href: "/quests", label: "Quêtes" },
+  { href: "/activite", label: "Activité" },
   { href: "/armes", label: "Armes" },
   { href: "/postmaster", label: "Postes" },
   { href: "/marchands", label: "Marchands" },
