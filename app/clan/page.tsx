@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { loadDefs } from "@/lib/manifest-client";
+import { fetchPlayer, cachedPlayer, type PlayerData } from "@/lib/player-client";
+import PlayerHoverCard, {
+  type HoverAnchor,
+  type HoverMember,
+} from "@/components/PlayerHoverCard";
+import PlayerModal, { type ModalTarget } from "@/components/PlayerModal";
+import type { Defs } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "none" | "error";
 
@@ -12,6 +20,9 @@ interface ClanMember {
     bungieGlobalDisplayName?: string;
     bungieGlobalDisplayNameCode?: number;
     iconPath?: string;
+    /** ≠ 0 quand le joueur a activé la sauvegarde partagée */
+    crossSaveOverride?: number;
+    applicableMembershipTypes?: number[];
   };
   bungieNetUserInfo?: { displayName?: string; iconPath?: string };
   isOnline?: boolean;
@@ -51,6 +62,9 @@ const MEMBER_TYPES: Record<number, string> = {
 
 const BUNGIE_ROOT = "https://www.bungie.net";
 
+/** Délai avant d'interroger Bungie : traverser une ligne ne doit rien déclencher. */
+const HOVER_DELAY_MS = 180;
+
 function lastSeen(iso?: string, online?: boolean): string {
   if (online) return "en ligne";
   if (!iso) return "—";
@@ -67,12 +81,70 @@ function lastSeen(iso?: string, online?: boolean): string {
   return `il y a ${Math.max(1, minutes)} min`;
 }
 
+/**
+ * Compte Destiny à interroger. En sauvegarde partagée, seul le compte
+ * `crossSaveOverride` porte les personnages : les autres plateformes
+ * renvoient un profil vide.
+ */
+function destinyAccount(
+  m: ClanMember
+): { type: number; id: string } | null {
+  const info = m.destinyUserInfo;
+  if (!info?.membershipId) return null;
+  const type =
+    info.crossSaveOverride && info.crossSaveOverride !== 0
+      ? info.crossSaveOverride
+      : info.membershipType;
+  if (type === undefined) return null;
+  return { type, id: info.membershipId };
+}
+
+function memberName(m: ClanMember): string {
+  const info = m.destinyUserInfo;
+  return (
+    info?.bungieGlobalDisplayName ??
+    info?.displayName ??
+    m.bungieNetUserInfo?.displayName ??
+    "Gardien"
+  );
+}
+
+function hoverMemberOf(m: ClanMember): HoverMember {
+  const info = m.destinyUserInfo;
+  return {
+    name: memberName(m),
+    code: info?.bungieGlobalDisplayNameCode,
+    icon: info?.iconPath ?? m.bungieNetUserInfo?.iconPath,
+    isOnline: m.isOnline,
+    membershipType: destinyAccount(m)?.type,
+    role: MEMBER_TYPES[m.memberType ?? 1] ?? "Membre",
+    joinDate: m.joinDate,
+    lastSeen: lastSeen(m.lastOnlineStatusChange, m.isOnline),
+  };
+}
+
 export default function ClanPage() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState("");
   const [clan, setClan] = useState<ClanDetail["detail"] | null>(null);
   const [members, setMembers] = useState<ClanMember[]>([]);
   const [onlyOnline, setOnlyOnline] = useState(false);
+
+  const [defs, setDefs] = useState<Defs | null>(null);
+  const [defsStatus, setDefsStatus] = useState("Chargement des définitions…");
+
+  const [hover, setHover] = useState<{
+    member: ClanMember;
+    anchor: HoverAnchor;
+  } | null>(null);
+  const [hoverData, setHoverData] = useState<PlayerData | null>(null);
+  const [hoverLoading, setHoverLoading] = useState(false);
+  const [hoverError, setHoverError] = useState("");
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Identifie le survol en cours : les réponses tardives d'un autre membre sont ignorées. */
+  const hoverKey = useRef("");
+
+  const [modalTarget, setModalTarget] = useState<ModalTarget | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,6 +179,115 @@ export default function ClanPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  /*
+   * Le manifest se charge en tâche de fond : la liste du clan s'affiche tout
+   * de suite, et les fiches sont prêtes au premier survol. Un échec ici ne
+   * doit pas empêcher de consulter le clan.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    loadDefs((msg) => !cancelled && setDefsStatus(msg))
+      .then((d) => !cancelled && setDefs(d))
+      .catch(
+        (e: unknown) =>
+          !cancelled &&
+          setDefsStatus(
+            e instanceof Error ? e.message : "Définitions indisponibles"
+          )
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const clearHover = useCallback(() => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+    hoverKey.current = "";
+    setHover(null);
+    setHoverData(null);
+    setHoverError("");
+    setHoverLoading(false);
+  }, []);
+
+  const startHover = useCallback(
+    (m: ClanMember, element: HTMLElement) => {
+      // Le survol précédent ne doit pas déclencher sa requête après coup.
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+
+      const account = destinyAccount(m);
+      const rect = element.getBoundingClientRect();
+      setHover({
+        member: m,
+        anchor: { top: rect.top, bottom: rect.bottom, left: rect.left },
+      });
+      setHoverError("");
+
+      if (!account) {
+        setHoverData(null);
+        setHoverLoading(false);
+        return;
+      }
+
+      const key = `${account.type}/${account.id}`;
+      hoverKey.current = key;
+
+      // Déjà lu récemment : affichage immédiat, aucune requête.
+      const cachedData = cachedPlayer(account.type, account.id);
+      if (cachedData) {
+        setHoverData(cachedData);
+        setHoverLoading(false);
+        return;
+      }
+
+      setHoverData(null);
+      setHoverLoading(true);
+      hoverTimer.current = setTimeout(() => {
+        fetchPlayer(account.type, account.id, true)
+          .then((d) => {
+            if (hoverKey.current === key) setHoverData(d);
+          })
+          .catch((e: unknown) => {
+            if (hoverKey.current === key) {
+              setHoverError(
+                e instanceof Error ? e.message : "Profil illisible"
+              );
+            }
+          })
+          .finally(() => {
+            if (hoverKey.current === key) setHoverLoading(false);
+          });
+      }, HOVER_DELAY_MS);
+    },
+    []
+  );
+
+  const openMember = useCallback(
+    (m: ClanMember) => {
+      const account = destinyAccount(m);
+      if (!account) return;
+      clearHover();
+      const info = m.destinyUserInfo;
+      setModalTarget({
+        membershipType: account.type,
+        membershipId: account.id,
+        name: memberName(m),
+        code: info?.bungieGlobalDisplayNameCode,
+        icon: info?.iconPath ?? m.bungieNetUserInfo?.iconPath,
+        isOnline: m.isOnline,
+        role: MEMBER_TYPES[m.memberType ?? 1] ?? "Membre",
+        joinDate: m.joinDate,
+        lastSeen: lastSeen(m.lastOnlineStatusChange, m.isOnline),
+      });
+    },
+    [clearHover]
+  );
+
+  useEffect(() => () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
   }, []);
 
   const sorted = useMemo(() => {
@@ -220,15 +401,33 @@ export default function ClanPage() {
               <tbody>
                 {sorted.map((m) => {
                   const info = m.destinyUserInfo;
-                  const name =
-                    info?.bungieGlobalDisplayName ??
-                    info?.displayName ??
-                    m.bungieNetUserInfo?.displayName ??
-                    "Gardien";
+                  const name = memberName(m);
                   const code = info?.bungieGlobalDisplayNameCode;
                   const icon = info?.iconPath ?? m.bungieNetUserInfo?.iconPath;
+                  const account = destinyAccount(m);
                   return (
-                    <tr key={info?.membershipId ?? name}>
+                    <tr
+                      key={info?.membershipId ?? name}
+                      className={
+                        account
+                          ? "cursor-pointer hover:bg-base-300/60 focus:bg-base-300/60 outline-none"
+                          : undefined
+                      }
+                      tabIndex={account ? 0 : undefined}
+                      role={account ? "button" : undefined}
+                      aria-label={account ? `Fiche de ${name}` : undefined}
+                      onMouseEnter={(e) => startHover(m, e.currentTarget)}
+                      onMouseLeave={clearHover}
+                      onFocus={(e) => startHover(m, e.currentTarget)}
+                      onBlur={clearHover}
+                      onClick={() => openMember(m)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openMember(m);
+                        }
+                      }}
+                    >
                       <td>
                         <div className="flex items-center gap-2">
                           {icon && (
@@ -268,6 +467,33 @@ export default function ClanPage() {
           </div>
         </div>
       </div>
+
+      <p className="text-xs opacity-50">
+        Survole un gardien pour un aperçu, clique pour sa fiche complète —
+        personnages, puissance, statistiques, activité en cours et équipement
+        porté. Ce que Bungie accepte de montrer dépend des réglages de
+        confidentialité de chacun : un profil privé est signalé comme tel.
+      </p>
+
+      {hover && (
+        <PlayerHoverCard
+          member={hoverMemberOf(hover.member)}
+          data={hoverData}
+          defs={defs}
+          loading={hoverLoading}
+          error={hoverError}
+          anchor={hover.anchor}
+        />
+      )}
+
+      {modalTarget && (
+        <PlayerModal
+          target={modalTarget}
+          defs={defs}
+          defsStatus={defsStatus}
+          onClose={() => setModalTarget(null)}
+        />
+      )}
     </div>
   );
 }

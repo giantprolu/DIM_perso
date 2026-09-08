@@ -84,6 +84,8 @@ export interface DamageTypeDef {
 export interface RecordDef {
   hash: number;
   displayProperties: DisplayProperties;
+  /** Sceaux : le titre porté, décliné par genre */
+  titleInfo?: { titlesByGender?: Record<string, string> };
   redacted?: boolean;
 }
 
@@ -155,6 +157,28 @@ export interface PlaceDef {
   displayProperties?: { name?: string };
 }
 
+export interface ActivityDef {
+  hash: number;
+  displayProperties: DisplayProperties;
+  pgcrImage?: string;
+  activityTypeHash?: number;
+  activityModeHashes?: number[];
+  destinationHash?: number;
+  placeHash?: number;
+}
+
+export interface ActivityModeDef {
+  hash: number;
+  displayProperties: DisplayProperties;
+  modeType?: number;
+}
+
+export interface RaceDef {
+  hash: number;
+  displayProperties: DisplayProperties;
+  genderedRaceNames?: Record<string, string>;
+}
+
 export interface GuardianRankDef {
   hash: number;
   displayProperties: DisplayProperties;
@@ -181,6 +205,9 @@ export interface Defs {
   vendors: Record<string, VendorDef>;
   destinations: Record<string, DestinationDef>;
   places: Record<string, PlaceDef>;
+  activities: Record<string, ActivityDef>;
+  activityModes: Record<string, ActivityModeDef>;
+  races: Record<string, RaceDef>;
 }
 
 // ---- Profil ----
@@ -218,6 +245,23 @@ export interface Character {
   emblemPath?: string;
   emblemBackgroundPath?: string;
   dateLastPlayed: string;
+  raceHash?: number;
+  genderHash?: number;
+  genderType?: number;
+  baseCharacterLevel?: number;
+  minutesPlayedTotal?: string;
+  minutesPlayedThisSession?: string;
+  /** Sceau porté (DestinyRecordDefinition.titleInfo) */
+  titleRecordHash?: number;
+}
+
+/** Ce que fait un personnage en ce moment (composant 204). */
+export interface CharacterActivities {
+  currentActivityHash?: number;
+  currentActivityModeHash?: number;
+  currentActivityModeType?: number;
+  currentPlaylistActivityHash?: number;
+  dateActivityStarted?: string;
 }
 
 export interface InGameLoadoutItem {
@@ -314,11 +358,31 @@ export interface ProfileResponse {
       currentSeasonHash?: number;
       currentGuardianRank?: number;
       lifetimeHighestGuardianRank?: number;
+      dateLastPlayed?: string;
+      characterIds?: string[];
+      userInfo?: {
+        membershipId?: string;
+        membershipType?: number;
+        displayName?: string;
+        bungieGlobalDisplayName?: string;
+        bungieGlobalDisplayNameCode?: number;
+        iconPath?: string;
+        crossSaveOverride?: number;
+        applicableMembershipTypes?: number[];
+      };
     };
+    privacy?: number;
   };
-  characters?: { data?: Record<string, Character> };
+  characters?: { data?: Record<string, Character>; privacy?: number };
+  characterActivities?: {
+    data?: Record<string, CharacterActivities>;
+    privacy?: number;
+  };
   characterInventories?: { data?: Record<string, { items: ProfileItem[] }> };
-  characterEquipment?: { data?: Record<string, { items: ProfileItem[] }> };
+  characterEquipment?: {
+    data?: Record<string, { items: ProfileItem[] }>;
+    privacy?: number;
+  };
   profileInventory?: { data?: { items: ProfileItem[] } };
   profileRecords?: { data?: { records?: Record<string, RecordComponent> } };
   profileCollectibles?: {
