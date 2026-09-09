@@ -104,6 +104,27 @@ export interface SeasonDef {
   displayProperties: DisplayProperties;
   seasonNumber?: number;
   seasonalChallengesPresentationNodeHash?: number;
+  startDate?: string;
+  endDate?: string;
+  /**
+   * Une saison peut enchaîner plusieurs pass (un par acte). Les dates
+   * délimitent celui qui est actif ; `seasonPassProgressionHash` est resté
+   * à 0 depuis que Bungie a introduit cette liste.
+   */
+  seasonPassList?: {
+    seasonPassHash: number;
+    seasonPassStartDate?: string;
+    seasonPassEndDate?: string;
+  }[];
+  seasonPassProgressionHash?: number;
+}
+
+/** Un pass de saison : sa piste de récompenses et sa piste de prestige. */
+export interface SeasonPassDef {
+  hash: number;
+  displayProperties?: DisplayProperties;
+  rewardProgressionHash?: number;
+  prestigeProgressionHash?: number;
 }
 
 export interface LoadoutNameDef {
@@ -258,6 +279,7 @@ export interface Defs {
   records: Record<string, RecordDef>;
   nodes: Record<string, PresentationNodeDef>;
   seasons: Record<string, SeasonDef>;
+  seasonPasses: Record<string, SeasonPassDef>;
   guardianRanks: Record<string, GuardianRankDef>;
   plugSets: Record<string, PlugSetDef>;
   loadoutNames: Record<string, LoadoutNameDef>;

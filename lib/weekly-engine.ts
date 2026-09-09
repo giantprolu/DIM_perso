@@ -5,7 +5,9 @@ import type {
   MilestoneState,
   ObjectiveProgress,
   ProfileResponse,
+  ProgressionDef,
   PublicMilestone,
+  SeasonPassDef,
 } from "./types";
 
 /**
@@ -57,6 +59,8 @@ export interface MilestoneView {
   description: string;
   icon?: string;
   image?: string;
+  /** Rythme du jalon, pour le regroupement */
+  cadenceKey: Cadence;
   /** Libellé du rythme : « Hebdomadaire », « Quotidien »… */
   cadence: string;
   isWeekly: boolean;
@@ -76,11 +80,32 @@ export interface RankView {
   levelCap: number;
   /** Nom du palier courant (« Héroïque », « Légende »…) */
   stepName?: string;
+  /** Nom du palier suivant, pour dire vers quoi on avance */
+  nextStepName?: string;
   progress: number;
   nextAt: number;
+  /** XP restant avant le palier suivant */
+  remaining: number;
+  /** Le rang est au plafond : il faut réinitialiser pour continuer */
+  atCap: boolean;
   resets: number;
   weeklyProgress?: number;
   weeklyLimit?: number;
+}
+
+/** Le pass de saison en cours, rangs de prestige compris. */
+export interface SeasonPassView {
+  /** Nom du pass (« Triomphant »), pas le « EXP » du manifest */
+  name: string;
+  seasonName: string;
+  icon?: string;
+  level: number;
+  levelCap: number;
+  /** Le plafond est atteint : la piste de prestige a pris le relais */
+  capped: boolean;
+  prestigeLevel: number;
+  progress: number;
+  nextAt: number;
 }
 
 export interface ArtifactView {
@@ -155,6 +180,23 @@ function collectModifiers(defs: Defs, hashes: number[]): ModifierView[] {
     });
   }
   return out;
+}
+
+export type Cadence = "weekly" | "daily" | "event" | "other";
+
+/** Ordre d'affichage : ce qui expire le plus tôt d'abord. */
+export const CADENCES: { key: Cadence; label: string }[] = [
+  { key: "weekly", label: "Hebdomadaire" },
+  { key: "daily", label: "Quotidien" },
+  { key: "event", label: "Événement" },
+  { key: "other", label: "Sans échéance" },
+];
+
+function cadenceKey(type: number | undefined): Cadence {
+  if (type === MILESTONE_WEEKLY) return "weekly";
+  if (type === MILESTONE_DAILY) return "daily";
+  if (type === MILESTONE_SPECIAL) return "event";
+  return "other";
 }
 
 function cadenceLabel(type: number | undefined): string {
@@ -254,6 +296,7 @@ export function buildMilestones(
       ),
       icon: def?.displayProperties?.icon,
       image: def?.image,
+      cadenceKey: cadenceKey(def?.milestoneType),
       cadence: cadenceLabel(def?.milestoneType),
       isWeekly: def?.milestoneType === MILESTONE_WEEKLY,
       activities,
@@ -311,6 +354,7 @@ export function buildRotation(
       description: def?.displayProperties?.description ?? "",
       icon: def?.displayProperties?.icon,
       image: def?.image,
+      cadenceKey: cadenceKey(def?.milestoneType),
       cadence: cadenceLabel(def?.milestoneType),
       isWeekly: def?.milestoneType === MILESTONE_WEEKLY,
       activities,
@@ -331,12 +375,108 @@ export function buildRotation(
 // ---------------------------------------------------------------------------
 
 /**
- * Rangs à afficher.
+ * Pass de saison actif, s'il y en a un.
  *
- * Le profil contient des centaines de progressions, dont beaucoup de
- * compteurs internes. Plutôt qu'une liste blanche de hashs (qui périme à
- * chaque saison), on garde ce qui ressemble à une réputation : un nom, une
- * icône de rang ou des paliers nommés, et une progression entamée.
+ * Une saison enchaîne aujourd'hui plusieurs pass (un par acte) : on prend
+ * celui dont la fenêtre de dates couvre l'instant présent, sinon le dernier
+ * de la liste. Le champ `seasonPassProgressionHash` de la saison est resté à
+ * zéro depuis ce changement, d'où le détour par `seasonPassList`.
+ */
+function currentSeasonPass(
+  defs: Defs,
+  profile: ProfileResponse
+): { def: SeasonPassDef; seasonName: string } | null {
+  const seasonHash = profile.profile?.data?.currentSeasonHash;
+  const season = seasonHash ? defs.seasons?.[seasonHash] : undefined;
+  if (!season) return null;
+
+  const now = Date.now();
+  const list = season.seasonPassList ?? [];
+  const active =
+    list.find((entry) => {
+      const start = Date.parse(entry.seasonPassStartDate ?? "");
+      const end = Date.parse(entry.seasonPassEndDate ?? "");
+      return (
+        (!Number.isFinite(start) || start <= now) &&
+        (!Number.isFinite(end) || now < end)
+      );
+    }) ?? list[list.length - 1];
+
+  const passHash = active?.seasonPassHash ?? season.seasonPassProgressionHash;
+  const def = passHash ? defs.seasonPasses?.[passHash] : undefined;
+  if (!def) return null;
+
+  return { def, seasonName: season.displayProperties?.name ?? "" };
+}
+
+/**
+ * Le pass de saison : le rang atteint, puis les rangs de prestige une fois le
+ * plafond franchi. Les deux pistes sont des progressions distinctes que
+ * Bungie nomme toutes deux « EXP » — d'où le nom emprunté au pass lui-même.
+ */
+export function buildSeasonPass(
+  defs: Defs,
+  profile: ProfileResponse,
+  progressions: CharacterProgressions | undefined
+): SeasonPassView | null {
+  const pass = currentSeasonPass(defs, profile);
+  if (!pass) return null;
+
+  const reward = pass.def.rewardProgressionHash
+    ? progressions?.progressions?.[pass.def.rewardProgressionHash]
+    : undefined;
+  if (!reward) return null;
+
+  const prestige = pass.def.prestigeProgressionHash
+    ? progressions?.progressions?.[pass.def.prestigeProgressionHash]
+    : undefined;
+
+  const level = reward.level ?? 0;
+  const levelCap = reward.levelCap ?? 0;
+  const capped = levelCap > 0 && level >= levelCap;
+  // Passé le plafond, c'est la piste de prestige qui avance.
+  const track = capped && prestige ? prestige : reward;
+
+  return {
+    name: pass.def.displayProperties?.name ?? "Pass de saison",
+    seasonName: pass.seasonName,
+    icon: pass.def.displayProperties?.icon,
+    level,
+    levelCap,
+    capped,
+    prestigeLevel: capped ? (prestige?.level ?? 0) : 0,
+    progress: track.progressToNextLevel ?? 0,
+    nextAt: track.nextLevelAt ?? 0,
+  };
+}
+
+/**
+ * Une progression est-elle une réputation présentable ?
+ *
+ * Le manifest en compte 172, dont une large majorité de compteurs internes.
+ * Trois traits séparent une vraie réputation du reste, sans liste blanche de
+ * hashs à maintenir chaque saison :
+ *
+ *  - un nom ;
+ *  - une description ou une icône de rang — c'est ce qui écarte les
+ *    quarante-deux pistes que Bungie nomme « EXP » et « Prestige », qui n'ont
+ *    ni l'une ni l'autre. Ce sont les niveaux de saison, présents et passés ;
+ *    celui en cours est traité à part par `buildSeasonPass`, sous son vrai
+ *    nom ;
+ *  - au moins deux paliers, sinon il n'y a pas de piste à suivre.
+ */
+function isReputation(def: ProgressionDef): boolean {
+  if (def.redacted || def.visible === false) return false;
+  if (!def.displayProperties?.name) return false;
+  if ((def.steps?.length ?? 0) < 2) return false;
+  return Boolean(def.displayProperties.description || def.rankIcon);
+}
+
+/**
+ * Rangs entamés par le personnage, un par réputation.
+ *
+ * Certaines pistes existent en plusieurs exemplaires — une par saison, sous
+ * le même nom : on ne garde que celle où le personnage est le plus avancé.
  */
 export function buildRanks(
   defs: Defs,
@@ -346,38 +486,63 @@ export function buildRanks(
 
   for (const p of Object.values(progressions?.progressions ?? {})) {
     const def = defs.progressions?.[p.progressionHash];
-    if (!def || def.redacted || def.visible === false) continue;
-
-    const name = def.displayProperties?.name;
-    if (!name) continue;
-
-    const looksLikeRank = Boolean(def.rankIcon) || (def.steps?.length ?? 0) >= 2;
-    if (!looksLikeRank) continue;
+    const name = def?.displayProperties?.name;
+    if (!def || !name || !isReputation(def)) continue;
 
     const started = (p.level ?? 0) > 0 || (p.currentProgress ?? 0) > 0;
     if (!started) continue;
 
-    const step = p.stepIndex !== undefined ? def.steps?.[p.stepIndex] : undefined;
+    const steps = def.steps ?? [];
+    const index = p.stepIndex ?? 0;
+    const levelCap = p.levelCap ?? 0;
+    const nextAt = p.nextLevelAt ?? 0;
+    const progress = p.progressToNextLevel ?? 0;
+    const atCap = levelCap > 0 && (p.level ?? 0) >= levelCap;
 
     views.push({
       hash: p.progressionHash,
       name,
       icon: def.rankIcon ?? def.displayProperties?.icon,
       level: p.level ?? 0,
-      levelCap: p.levelCap ?? 0,
-      stepName: step?.stepName,
-      progress: p.progressToNextLevel ?? 0,
-      nextAt: p.nextLevelAt ?? 0,
+      levelCap,
+      // Un palier anonyme renvoie "" : on préfère l'absence, pour que la page
+      // retombe sur son libellé de repli.
+      stepName: steps[index]?.stepName || undefined,
+      nextStepName: atCap ? undefined : steps[index + 1]?.stepName || undefined,
+      progress,
+      nextAt,
+      remaining: nextAt > progress ? nextAt - progress : 0,
+      atCap,
       resets: p.currentResetCount ?? 0,
       weeklyProgress: p.weeklyProgress,
       weeklyLimit: p.weeklyLimit,
     });
   }
 
-  views.sort(
-    (a, b) => b.level - a.level || a.name.localeCompare(b.name, "fr")
+  // Une seule carte par nom : la piste la plus avancée gagne.
+  const best = new Map<string, RankView>();
+  for (const view of views) {
+    const kept = best.get(view.name);
+    const ahead =
+      !kept ||
+      view.level > kept.level ||
+      (view.level === kept.level && view.progress > kept.progress);
+    if (ahead) best.set(view.name, view);
+  }
+
+  /*
+   * En tête, ce sur quoi il reste quelque chose à gagner cette semaine ;
+   * ensuite les rangs les plus avancés, qui sont ceux que l'on suit.
+   */
+  const weeklyRoom = (r: RankView) =>
+    r.weeklyLimit ? (r.weeklyLimit > (r.weeklyProgress ?? 0) ? 0 : 1) : 2;
+
+  return [...best.values()].sort(
+    (a, b) =>
+      weeklyRoom(a) - weeklyRoom(b) ||
+      b.level - a.level ||
+      a.name.localeCompare(b.name, "fr")
   );
-  return views;
 }
 
 // ---------------------------------------------------------------------------
@@ -427,4 +592,41 @@ export function timeLeft(iso: string | undefined): string | null {
   if (days > 0) return `${days} j ${hours % 24} h`;
   if (hours > 0) return `${hours} h ${Math.floor((ms % 3_600_000) / 60_000)} min`;
   return `${Math.max(1, Math.floor(ms / 60_000))} min`;
+}
+
+/** Un nombre lisible : 373539 → « 373 539 ». */
+export function formatNumber(n: number): string {
+  return Math.round(n).toLocaleString("fr-FR");
+}
+
+/**
+ * Prochaine réinitialisation Destiny 2.
+ *
+ * Le jeu remet ses compteurs à 17 h UTC : chaque jour pour les primes
+ * quotidiennes, chaque mardi pour tout le reste. Ces heures ne dépendent ni
+ * du fuseau du joueur ni de l'heure d'été.
+ */
+const RESET_HOUR_UTC = 17;
+const TUESDAY = 2;
+
+export function nextDailyReset(from: Date = new Date()): Date {
+  const next = new Date(from);
+  next.setUTCHours(RESET_HOUR_UTC, 0, 0, 0);
+  if (next <= from) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
+export function nextWeeklyReset(from: Date = new Date()): Date {
+  const next = new Date(from);
+  next.setUTCHours(RESET_HOUR_UTC, 0, 0, 0);
+  // Nombre de jours jusqu'au mardi ; 0 si on y est déjà avant l'heure.
+  const shift = (TUESDAY - next.getUTCDay() + 7) % 7;
+  next.setUTCDate(next.getUTCDate() + shift);
+  if (next <= from) next.setUTCDate(next.getUTCDate() + 7);
+  return next;
+}
+
+/** « 2 j 5 h », ou null si la date est passée. */
+export function until(date: Date | undefined): string | null {
+  return date ? timeLeft(date.toISOString()) : null;
 }
