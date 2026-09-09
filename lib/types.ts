@@ -473,7 +473,13 @@ export interface ProfileResponse {
     privacy?: number;
   };
   profileInventory?: { data?: { items: ProfileItem[] } };
-  profileRecords?: { data?: { records?: Record<string, RecordComponent> } };
+  profileRecords?: {
+    data?: {
+      records?: Record<string, RecordComponent>;
+      /** Triomphe suivi dans le HUD, quand le joueur en a choisi un */
+      trackedRecordHash?: number;
+    };
+  };
   profileCollectibles?: {
     data?: { collectibles?: Record<string, { state: number }> };
   };
@@ -645,6 +651,15 @@ export interface ActivityHistoryPage {
   activities?: ActivityHistoryEntry[];
 }
 
+/**
+ * Une arme telle qu'un rapport de fin de partie la compte.
+ * C'est la seule source qui couvre autre chose que les exotiques.
+ */
+export interface WeaponUsage {
+  referenceId: number;
+  values?: Record<string, StatsValue>;
+}
+
 export interface PgcrEntry {
   standing?: number;
   score?: StatsValue;
@@ -659,6 +674,8 @@ export interface PgcrEntry {
     emblemHash?: number;
   };
   values?: Record<string, StatsValue>;
+  /** Détail par arme et médailles gagnées pendant la partie */
+  extended?: { weapons?: WeaponUsage[] };
 }
 
 export interface PostGameCarnageReport {

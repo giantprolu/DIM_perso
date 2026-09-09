@@ -9,11 +9,17 @@ import {
   ITEM_TYPE_BOUNTY,
   ITEM_TYPE_QUEST,
   ITEM_TYPE_QUEST_STEP,
+  ITEM_STATE_HIGHLIGHTED_OBJECTIVE,
   ITEM_STATE_TRACKED,
   RECORD_STATE_OBJECTIVE_NOT_COMPLETED,
   RECORD_STATE_REDEEMED,
 } from "@/lib/destiny-constants";
-import { setTracked } from "@/lib/d2-actions";
+import {
+  applyItemStateLocally,
+  fetchProfileFresh,
+  setTracked,
+  sleep,
+} from "@/lib/d2-actions";
 import {
   fillVariables,
   readStringVariables,
@@ -28,12 +34,30 @@ import type {
 } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
+
+/**
+ * Une poursuite est-elle pointée ?
+ *
+ * Bungie décrit le suivi par deux drapeaux : `Tracked`, posé quand on épingle
+ * une quête, et `HighlightedObjective`, que le jeu ajoute à ce qu'il met en
+ * avant dans le HUD. Ne lire que le premier laissait passer une partie de ce
+ * que le joueur voit pourtant épinglé à l'écran.
+ */
+function isTracked(state: number | undefined): boolean {
+  return (
+    ((state ?? 0) & (ITEM_STATE_TRACKED | ITEM_STATE_HIGHLIGHTED_OBJECTIVE)) !==
+    0
+  );
+}
 type Section = "pursuits" | "seasonal" | "ranks";
 type PursuitTab = "all" | "tracked" | "quests" | "bounties";
 
 interface PursuitVM {
   key: string;
   instanceId?: string;
+  /** Personnage qui la porte : une quête pointée peut l'être ailleurs. */
+  characterId: string;
+  characterName: string;
   tracked: boolean;
   name: string;
   typeName: string;
@@ -199,19 +223,44 @@ export default function QuestsPage() {
     };
   }, []);
 
-  /** Pointe/dépointe une quête en jeu, puis rafraîchit le profil. */
+  /**
+   * Pointe ou dépointe une quête en jeu.
+   *
+   * Bungie met plusieurs secondes à servir le profil modifié : on applique donc
+   * le changement à ce qui est affiché, puis on relit en arrière-plan sans
+   * jamais revenir en arrière si la relecture est encore en retard.
+   */
   async function toggleTrack(p: PursuitVM) {
-    if (!p.instanceId || trackBusy) return;
+    const instanceId = p.instanceId;
+    if (!instanceId || trackBusy) return;
+    const wanted = !p.tracked;
     setTrackBusy(true);
     setTrackError("");
     try {
       await setTracked({
-        state: !p.tracked,
-        itemId: p.instanceId,
-        characterId: selectedChar,
+        state: wanted,
+        itemId: instanceId,
+        // Le pointage appartient au personnage qui porte la quête.
+        characterId: p.characterId,
       });
-      const res = await fetch("/api/bungie/profile?scope=quests");
-      if (res.ok) setProfile((await res.json()) as ProfileResponse);
+      const patch = (profile: ProfileResponse) =>
+        applyItemStateLocally(profile, instanceId, ITEM_STATE_TRACKED, wanted);
+      setProfile((prev) => (prev ? patch(prev) : prev));
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await sleep(attempt === 0 ? 900 : 1800);
+        const fresh = await fetchProfileFresh("quests").catch(() => null);
+        if (!fresh) break;
+        const items = Object.values(
+          fresh.characterInventories?.data ?? {}
+        ).flatMap((inv) => inv.items);
+        const item = items.find((i) => i.itemInstanceId === instanceId);
+        if (isTracked(item?.state) === wanted) {
+          setProfile(fresh);
+          break;
+        }
+        setProfile(patch(fresh));
+      }
     } catch (e) {
       setTrackError(
         e instanceof Error ? e.message : "Impossible de modifier le pointage."
@@ -240,49 +289,63 @@ export default function QuestsPage() {
   );
 
   // ---------- Poursuites ----------
-  const pursuits: PursuitVM[] = useMemo(() => {
-    if (!defs || !profile || !selectedChar) return [];
-    const items =
-      profile.characterInventories?.data?.[selectedChar]?.items ?? [];
+  /**
+   * Les poursuites de TOUS les personnages.
+   *
+   * L'onglet des quêtes pointées ne lisait que le personnage affiché : une
+   * quête épinglée sur un autre Gardien passait pour inexistante, et l'onglet
+   * restait vide alors que le jeu, lui, affichait bien la quête.
+   */
+  const allPursuits: PursuitVM[] = useMemo(() => {
+    if (!defs || !profile) return [];
     const instanced = profile.itemComponents?.objectives?.data ?? {};
-    const uninstanced =
-      profile.characterUninstancedItemComponents?.[selectedChar]?.objectives
-        ?.data ?? {};
-
     const list: PursuitVM[] = [];
-    for (const item of items) {
-      if (item.bucketHash !== BUCKET_PURSUITS) continue;
-      const def = defs.items[item.itemHash];
-      const objectives: ObjectiveProgress[] =
-        (item.itemInstanceId && instanced[item.itemInstanceId]?.objectives) ||
-        uninstanced[item.itemHash]?.objectives ||
-        [];
-      const visible = objectives.filter((o) => o.visible !== false);
-      const complete = visible.length > 0 && visible.every((o) => o.complete);
 
-      list.push({
-        key: item.itemInstanceId ?? `${item.itemHash}`,
-        instanceId: item.itemInstanceId,
-        tracked: ((item.state ?? 0) & ITEM_STATE_TRACKED) !== 0,
-        name: def?.redacted
-          ? "Classifié"
-          : def?.displayProperties?.name || `Objet ${item.itemHash}`,
-        typeName: def?.itemTypeDisplayName ?? "",
-        description: fillVariables(
-          def?.displayProperties?.description,
-          vars,
-          selectedChar
-        ),
-        icon: def?.displayProperties?.icon,
-        isBounty: def?.itemType === ITEM_TYPE_BOUNTY,
-        isQuest:
-          def?.itemType === ITEM_TYPE_QUEST ||
-          def?.itemType === ITEM_TYPE_QUEST_STEP ||
-          Boolean(def?.setData),
-        expirationDate: item.expirationDate,
-        objectives: visible,
-        complete,
-      });
+    for (const [characterId, inventory] of Object.entries(
+      profile.characterInventories?.data ?? {}
+    )) {
+      const uninstanced =
+        profile.characterUninstancedItemComponents?.[characterId]?.objectives
+          ?.data ?? {};
+      const classType =
+        profile.characters?.data?.[characterId]?.classType ?? -1;
+
+      for (const item of inventory.items) {
+        if (item.bucketHash !== BUCKET_PURSUITS) continue;
+        const def = defs.items[item.itemHash];
+        const objectives: ObjectiveProgress[] =
+          (item.itemInstanceId && instanced[item.itemInstanceId]?.objectives) ||
+          uninstanced[item.itemHash]?.objectives ||
+          [];
+        const visible = objectives.filter((o) => o.visible !== false);
+        const complete = visible.length > 0 && visible.every((o) => o.complete);
+
+        list.push({
+          key: item.itemInstanceId ?? `${characterId}-${item.itemHash}`,
+          instanceId: item.itemInstanceId,
+          characterId,
+          characterName: CLASS_NAMES[classType] ?? "Gardien",
+          tracked: isTracked(item.state),
+          name: def?.redacted
+            ? "Classifié"
+            : def?.displayProperties?.name || `Objet ${item.itemHash}`,
+          typeName: def?.itemTypeDisplayName ?? "",
+          description: fillVariables(
+            def?.displayProperties?.description,
+            vars,
+            characterId
+          ),
+          icon: def?.displayProperties?.icon,
+          isBounty: def?.itemType === ITEM_TYPE_BOUNTY,
+          isQuest:
+            def?.itemType === ITEM_TYPE_QUEST ||
+            def?.itemType === ITEM_TYPE_QUEST_STEP ||
+            Boolean(def?.setData),
+          expirationDate: item.expirationDate,
+          objectives: visible,
+          complete,
+        });
+      }
     }
 
     list.sort((a, b) => {
@@ -292,12 +355,49 @@ export default function QuestsPage() {
       return a.name.localeCompare(b.name, "fr");
     });
     return list;
-  }, [defs, profile, selectedChar, vars]);
+  }, [defs, profile, vars]);
+
+  const pursuits = useMemo(
+    () => allPursuits.filter((p) => p.characterId === selectedChar),
+    [allPursuits, selectedChar]
+  );
+
+  /** Tout ce qui est pointé, quel que soit le personnage qui le porte. */
+  const trackedPursuits = useMemo(
+    () => allPursuits.filter((p) => p.tracked),
+    [allPursuits]
+  );
+
+  /** Le triomphe épinglé dans le HUD, s'il y en a un. */
+  const trackedRecord: RecordVM | null = useMemo(() => {
+    const hash = profile?.profileRecords?.data?.trackedRecordHash;
+    if (!defs || !hash) return null;
+    const def = defs.records?.[hash];
+    if (!def || def.redacted) return null;
+    const comp =
+      profile?.profileRecords?.data?.records?.[hash] ??
+      profile?.characterRecords?.data?.[selectedChar]?.records?.[hash];
+    const objectives = (comp?.objectives ?? []).filter(
+      (o) => o.visible !== false
+    );
+    return {
+      hash,
+      name: def.displayProperties?.name ?? "Triomphe",
+      description: def.displayProperties?.description ?? "",
+      icon: def.displayProperties?.icon,
+      objectives,
+      complete: comp
+        ? (comp.state & RECORD_STATE_OBJECTIVE_NOT_COMPLETED) === 0
+        : false,
+      redeemed: comp ? (comp.state & RECORD_STATE_REDEEMED) !== 0 : false,
+    };
+  }, [defs, profile, selectedChar]);
 
   const shownPursuits = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    return pursuits.filter((p) => {
-      if (pursuitTab === "tracked" && !p.tracked) return false;
+    // Ce qui est pointé vaut pour le compte entier, pas pour un personnage.
+    const source = pursuitTab === "tracked" ? trackedPursuits : pursuits;
+    return source.filter((p) => {
       if (pursuitTab === "quests" && !p.isQuest) return false;
       if (pursuitTab === "bounties" && !p.isBounty) return false;
       if (hideCompleted && p.complete) return false;
@@ -308,7 +408,7 @@ export default function QuestsPage() {
         p.description.toLowerCase().includes(f)
       );
     });
-  }, [pursuits, pursuitTab, filter, hideCompleted]);
+  }, [pursuits, trackedPursuits, pursuitTab, filter, hideCompleted]);
 
   // ---------- Archives (défis saisonniers, rangs) ----------
   function getRecordComponent(hash: number): RecordComponent | undefined {
@@ -645,7 +745,7 @@ export default function QuestsPage() {
                 {(
                   [
                     ["all", "Tout"],
-                    ["tracked", "📌 Pointées"],
+                    ["tracked", `📌 Pointées (${trackedPursuits.length})`],
                     ["quests", "Quêtes"],
                     ["bounties", "Primes"],
                   ] as [PursuitTab, string][]
@@ -722,29 +822,67 @@ export default function QuestsPage() {
 
         {/* ── Contenu ── */}
         <div className="lg:col-span-3 min-w-0 flex flex-col gap-4">
-          {section === "pursuits" &&
-            (shownPursuits.length === 0 ? (
-              <div className="opacity-60 py-8 text-center">
-                Aucune poursuite ne correspond.
-              </div>
-            ) : (
-              shownPursuits.map((p) => (
+          {section === "pursuits" && (
+            <>
+              {pursuitTab === "tracked" && trackedRecord && (
                 <QuestCard
-                  key={p.key}
-                  icon={p.icon}
-                  title={p.name}
-                  badge={p.complete ? null : expiryInfo(p.expirationDate)}
-                  typeLine={p.typeName}
-                  description={p.description}
-                  objectives={p.objectives}
-                  complete={p.complete}
-                  tracked={p.tracked}
-                  onToggleTrack={
-                    p.instanceId ? () => toggleTrack(p) : undefined
-                  }
+                  key={`record-${trackedRecord.hash}`}
+                  icon={trackedRecord.icon}
+                  title={trackedRecord.name}
+                  typeLine="Triomphe suivi dans le HUD"
+                  description={trackedRecord.description}
+                  objectives={trackedRecord.objectives}
+                  complete={trackedRecord.complete}
                 />
-              ))
-            ))}
+              )}
+
+              {shownPursuits.length === 0 ? (
+                pursuitTab === "tracked" && !trackedRecord ? (
+                  <div className="alert alert-info text-sm">
+                    <div>
+                      <p>
+                        Aucune des {allPursuits.length} poursuites de tes
+                        personnages ne porte le drapeau «&nbsp;pointée&nbsp;»
+                        chez Bungie.
+                      </p>
+                      <p className="opacity-80 mt-1">
+                        Le jeu ne remonte pas toujours ce que tu as épinglé dans
+                        le HUD : ce que l&apos;API expose, c&apos;est le drapeau
+                        posé par le bouton 📌. Pointe une quête depuis
+                        l&apos;onglet «&nbsp;Tout&nbsp;» et elle apparaîtra ici,
+                        et dans le jeu.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="opacity-60 py-8 text-center">
+                    Aucune poursuite ne correspond.
+                  </div>
+                )
+              ) : (
+                shownPursuits.map((p) => (
+                  <QuestCard
+                    key={p.key}
+                    icon={p.icon}
+                    title={p.name}
+                    badge={p.complete ? null : expiryInfo(p.expirationDate)}
+                    typeLine={
+                      p.characterId === selectedChar
+                        ? p.typeName
+                        : `${p.typeName}${p.typeName ? " · " : ""}sur ton ${p.characterName}`
+                    }
+                    description={p.description}
+                    objectives={p.objectives}
+                    complete={p.complete}
+                    tracked={p.tracked}
+                    onToggleTrack={
+                      p.instanceId ? () => toggleTrack(p) : undefined
+                    }
+                  />
+                ))
+              )}
+            </>
+          )}
 
           {section === "seasonal" &&
             (seasonalGroups.length === 0 ? (

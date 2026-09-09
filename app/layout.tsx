@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+// Police des pictogrammes RPG Awesome, servie depuis public/fonts.
+import "./rpg-awesome.css";
 import Nav from "@/components/Nav";
 
 export const metadata: Metadata = {

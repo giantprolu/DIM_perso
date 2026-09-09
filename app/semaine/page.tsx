@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import { BUNGIE_ROOT, CLASS_NAMES } from "@/lib/destiny-constants";
 import { readStringVariables, type StringVariables } from "@/lib/string-variables";
@@ -73,12 +73,63 @@ function ObjectiveBar({ objective }: { objective: ObjectiveView }) {
   );
 }
 
+/**
+ * Largeur demandée par une carte, en pixels de base flex.
+ *
+ * Une grille à trois colonnes donnait quarante cartes de taille identique :
+ * celle qui porte six objectifs et huit modificateurs était illisible, sa
+ * voisine — un titre et rien d'autre — occupait autant de place pour rien.
+ * On mesure donc ce que la carte a réellement à dire, et `flex-wrap` remplit
+ * les lignes tout seul.
+ */
+function milestoneBasis(m: MilestoneView): number {
+  const modifiers = m.activities.reduce((a, x) => a + x.modifiers.length, 0);
+  const weight =
+    m.objectives.length * 2 +
+    m.rewards.length +
+    m.activities.length +
+    Math.ceil(modifiers / 2) +
+    (m.description && m.description.length > 90 ? 2 : 0);
+  if (weight <= 2) return 250;
+  if (weight <= 5) return 330;
+  if (weight <= 10) return 440;
+  return 600;
+}
+
+function rankBasis(r: RankView): number {
+  const weight = (r.nextAt > 0 ? 2 : 0) + (r.weeklyLimit ? 2 : 0) + (r.resets > 0 ? 1 : 0);
+  if (weight <= 1) return 250;
+  if (weight <= 3) return 320;
+  return 400;
+}
+
+/**
+ * Une carte dans le flux : elle réclame `basis` pixels, s'étire pour finir sa
+ * ligne, et ne descend jamais sous une largeur lisible.
+ */
+function FlexCard({
+  basis,
+  children,
+}: {
+  basis: number;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="min-w-0 grow shrink basis-full sm:basis-auto"
+      style={{ flexBasis: `${basis}px`, maxWidth: "100%" }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function MilestoneCard({ milestone }: { milestone: MilestoneView }) {
   const remaining = timeLeft(milestone.endDate);
   const pending = milestone.rewards.filter((r) => !r.earned && !r.redeemed);
   return (
     <div
-      className={`card bg-base-200 shadow border ${
+      className={`card h-full bg-base-200 shadow border ${
         milestone.complete ? "border-success/40" : "border-base-300"
       }`}
     >
@@ -179,7 +230,7 @@ function RankCard({ rank }: { rank: RankView }) {
       : 0;
 
   return (
-    <div className="card bg-base-200 shadow border border-base-300">
+    <div className="card h-full bg-base-200 shadow border border-base-300">
       <div className="card-body p-4 gap-2">
         <div className="flex items-center gap-3">
           {rank.icon ? (
@@ -425,9 +476,9 @@ export default function WeeklyPage() {
       </div>
 
       {(seasonPass || artifact) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="flex flex-wrap items-stretch gap-4">
           {seasonPass && (
-            <div className="card bg-base-200 shadow border border-base-300">
+            <div className="card grow shrink basis-[420px] min-w-0 bg-base-200 shadow border border-base-300">
               <div className="card-body p-4 gap-2">
                 <div className="flex items-center gap-3">
                   {seasonPass.icon ? (
@@ -472,7 +523,7 @@ export default function WeeklyPage() {
           )}
 
           {artifact && (
-            <div className="card bg-base-200 shadow border border-base-300">
+            <div className="card grow shrink basis-[420px] min-w-0 bg-base-200 shadow border border-base-300">
               <div className="card-body p-4 gap-2">
                 <div className="flex items-center gap-3">
                   {artifact.icon ? (
@@ -573,9 +624,11 @@ export default function WeeklyPage() {
                     </h2>
                     <span className="text-xs opacity-50">{group.hint}</span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <div className="flex flex-wrap items-stretch gap-4">
                     {group.items.map((m) => (
-                      <MilestoneCard key={m.hash} milestone={m} />
+                      <FlexCard key={m.hash} basis={milestoneBasis(m)}>
+                        <MilestoneCard milestone={m} />
+                      </FlexCard>
                     ))}
                   </div>
                 </section>
@@ -590,9 +643,11 @@ export default function WeeklyPage() {
             Bungie ne publie pas de rotation en ce moment.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="flex flex-wrap items-stretch gap-4">
             {rotation.map((m) => (
-              <MilestoneCard key={m.hash} milestone={m} />
+              <FlexCard key={m.hash} basis={milestoneBasis(m)}>
+                <MilestoneCard milestone={m} />
+              </FlexCard>
             ))}
           </div>
         ))}
@@ -603,9 +658,11 @@ export default function WeeklyPage() {
             Aucune réputation entamée sur ce personnage.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="flex flex-wrap items-stretch gap-4">
             {ranks.map((rank) => (
-              <RankCard key={rank.hash} rank={rank} />
+              <FlexCard key={rank.hash} basis={rankBasis(rank)}>
+                <RankCard rank={rank} />
+              </FlexCard>
             ))}
           </div>
         ))}

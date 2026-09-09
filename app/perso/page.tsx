@@ -8,6 +8,7 @@ import {
   BUCKET_SUBCLASS,
   BUNGIE_ROOT,
   CLASS_NAMES,
+  ITEM_STATE_LOCKED,
   ITEM_TYPE_ARMOR,
   ITEM_TYPE_WEAPON,
   STAT_CAP,
@@ -15,11 +16,18 @@ import {
   WEAPON_SLOT_ORDER,
 } from "@/lib/destiny-constants";
 import {
+  ApiError,
+  applyEquipLocally,
+  applyItemStateLocally,
+  applySocketsLocally,
   buildLocationMap,
+  equippedInstance,
   equipItems,
+  fetchProfileFresh,
   insertPlug,
   moveToCharacter,
   setLocked,
+  sleep,
   type ItemLocation,
 } from "@/lib/d2-actions";
 import { buildItemDetail, type ItemDetail } from "@/lib/item-detail";
@@ -28,6 +36,7 @@ import type {
   Defs,
   ProfileItem,
   ProfileResponse,
+  SocketState,
 } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
@@ -46,11 +55,43 @@ interface SlotItem {
 interface Candidate {
   instanceId: string;
   itemHash: number;
+  bucketHash: number;
   name: string;
   icon?: string;
   power: number;
   isExotic: boolean;
   where: string;
+}
+
+/**
+ * Emplacements d'une instance avec un plug remplacé — utilisé quand Bungie
+ * confirme la pose sans renvoyer l'objet.
+ */
+function patchedSockets(
+  profile: ProfileResponse,
+  instanceId: string,
+  socketIndex: number,
+  plugHash: number
+): SocketState[] {
+  const current =
+    profile.itemComponents?.sockets?.data?.[instanceId]?.sockets ?? [];
+  const next = [...current];
+  next[socketIndex] = { ...next[socketIndex], plugHash };
+  return next;
+}
+
+function isLockedIn(profile: ProfileResponse, instanceId: string): boolean {
+  const lists = [
+    ...(profile.profileInventory?.data?.items ?? []),
+    ...Object.values(profile.characterInventories?.data ?? {}).flatMap(
+      (i) => i.items
+    ),
+    ...Object.values(profile.characterEquipment?.data ?? {}).flatMap(
+      (i) => i.items
+    ),
+  ];
+  const item = lists.find((i) => i.itemInstanceId === instanceId);
+  return ((item?.state ?? 0) & ITEM_STATE_LOCKED) !== 0;
 }
 
 export default function PersoPage() {
@@ -71,16 +112,49 @@ export default function PersoPage() {
   }
 
   const fetchProfile = useCallback(async (): Promise<ProfileResponse | null> => {
-    const res = await fetch("/api/bungie/profile?scope=perso");
-    if (res.status === 401) {
-      setPhase("unauth");
-      return null;
+    try {
+      const data = await fetchProfileFresh("perso");
+      setProfile(data);
+      return data;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        setPhase("unauth");
+        return null;
+      }
+      throw e;
     }
-    const data = (await res.json()) as ProfileResponse & { error?: string };
-    if (!res.ok) throw new Error(data.error ?? "Erreur profil");
-    setProfile(data);
-    return data;
   }, []);
+
+  /**
+   * Relit le profil sans laisser l'écran revenir en arrière.
+   *
+   * Bungie met quelques secondes à servir le nouvel état : une relecture
+   * immédiate rend souvent l'ancienne arme ou l'ancien mod. `stillTrue` dit si
+   * la réponse porte déjà le changement ; sinon on garde ce qu'on affiche —
+   * l'action, elle, a bien été confirmée.
+   */
+  const resync = useCallback(
+    async (
+      stillTrue: (p: ProfileResponse) => boolean,
+      patch: (p: ProfileResponse) => ProfileResponse
+    ) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await sleep(attempt === 0 ? 900 : 1800);
+        try {
+          const fresh = await fetchProfileFresh("perso");
+          if (stillTrue(fresh)) {
+            setProfile(fresh);
+            return;
+          }
+          // Réponse en retard : on la garde, corrigée de ce qu'on sait déjà.
+          setProfile(patch(fresh));
+        } catch {
+          return;
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +273,7 @@ export default function PersoPage() {
         out.push({
           instanceId: item.itemInstanceId,
           itemHash: item.itemHash,
+          bucketHash: bucket,
           name: def.displayProperties?.name ?? "Objet",
           icon: def.displayProperties?.icon,
           power: instances[item.itemInstanceId]?.primaryStat?.value ?? 0,
@@ -264,19 +339,34 @@ export default function PersoPage() {
         location: locations.get(c.instanceId),
         log: pushLog,
       });
-      if (ok) {
-        const res = await equipItems({
-          itemIds: [c.instanceId],
-          characterId: selectedChar,
-        });
-        const status = res.results[0]?.equipStatus;
-        if (status === 1) pushLog(`✅ ${c.name} équipé.`);
-        else
-          pushLog(
-            `⚠️ ${c.name} : non équipé (code ${status} — es-tu en orbite ?)`
-          );
+      if (!ok) return;
+      const res = await equipItems({
+        itemIds: [c.instanceId],
+        characterId: selectedChar,
+      });
+      const status = res.results[0]?.equipStatus;
+      if (status !== 1) {
+        pushLog(
+          `⚠️ ${c.name} : non équipé (code ${status} — es-tu en orbite ?)`
+        );
+        await fetchProfile();
+        return;
       }
-      await fetchProfile();
+
+      pushLog(`✅ ${c.name} équipé.`);
+      // L'écran suit tout de suite ; la relecture confirmera derrière.
+      const patch = (p: ProfileResponse) =>
+        applyEquipLocally(p, {
+          characterId: selectedChar,
+          instanceId: c.instanceId,
+          bucketHash: c.bucketHash,
+        });
+      setProfile((prev) => (prev ? patch(prev) : prev));
+      void resync(
+        (p) =>
+          equippedInstance(p, selectedChar, c.bucketHash) === c.instanceId,
+        patch
+      );
     } catch (e) {
       pushLog(`❌ ${c.name} : ${e instanceof Error ? e.message : "erreur"}`);
     } finally {
@@ -287,15 +377,34 @@ export default function PersoPage() {
   async function applyPlug(socketIndex: number, plugHash: number, name: string) {
     if (!detail || busy) return;
     setBusy(true);
+    const itemId = detail.instanceId;
     try {
-      await insertPlug({
-        itemId: detail.instanceId,
+      const res = await insertPlug({
+        itemId,
         characterId: selectedChar,
         socketIndex,
         plugItemHash: plugHash,
       });
-      pushLog(`🔧 ${name} posé sur ${detail.name}.`);
-      await fetchProfile();
+      if (res.applied === false) {
+        pushLog(`⚠️ ${name} : Bungie a posé autre chose dans l'emplacement.`);
+      } else {
+        pushLog(`🔧 ${name} posé sur ${detail.name}.`);
+      }
+
+      // Bungie renvoie l'objet modifié : c'est la source de vérité immédiate,
+      // bien avant que le profil complet ne reflète le changement.
+      const sockets: SocketState[] | null = res.sockets;
+      const patch = (p: ProfileResponse) =>
+        sockets
+          ? applySocketsLocally(p, itemId, sockets)
+          : applySocketsLocally(p, itemId, patchedSockets(p, itemId, socketIndex, plugHash));
+      setProfile((prev) => (prev ? patch(prev) : prev));
+      void resync(
+        (p) =>
+          p.itemComponents?.sockets?.data?.[itemId]?.sockets?.[socketIndex]
+            ?.plugHash === plugHash,
+        patch
+      );
     } catch (e) {
       pushLog(
         `⚠️ ${name} : ${e instanceof Error ? e.message : "refusé (énergie ?)"}`
@@ -314,12 +423,20 @@ export default function PersoPage() {
         itemId: detail.instanceId,
         characterId: selectedChar,
       });
+      const locked = !detail.isLocked;
       pushLog(
-        detail.isLocked
-          ? `🔓 ${detail.name} déverrouillé.`
-          : `🔒 ${detail.name} verrouillé.`
+        locked
+          ? `🔒 ${detail.name} verrouillé.`
+          : `🔓 ${detail.name} déverrouillé.`
       );
-      await fetchProfile();
+      const id = detail.instanceId;
+      const patch = (p: ProfileResponse) =>
+        applyItemStateLocally(p, id, ITEM_STATE_LOCKED, locked);
+      setProfile((prev) => (prev ? patch(prev) : prev));
+      void resync(
+        (p) => isLockedIn(p, id) === locked,
+        patch
+      );
     } catch (e) {
       pushLog(`⚠️ ${e instanceof Error ? e.message : "erreur"}`);
     } finally {

@@ -1,5 +1,23 @@
 import { BUCKET_POSTMASTER } from "./destiny-constants";
-import type { ItemResponse, ProfileResponse, SocketState } from "./types";
+import type {
+  ItemResponse,
+  ProfileItem,
+  ProfileResponse,
+  SocketState,
+} from "./types";
+
+/**
+ * Erreur d'une de nos routes, statut HTTP compris : sans lui, l'appelant ne
+ * peut pas distinguer « session expirée » d'une vraie panne.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 /** POST JSON vers nos routes /api/d2/*, avec remontée d'erreur lisible. */
 async function apiPost<T = { ok: boolean }>(
@@ -15,7 +33,7 @@ async function apiPost<T = { ok: boolean }>(
     | (T & { error?: string })
     | null;
   if (!res.ok || !json || json.error) {
-    throw new Error(json?.error ?? `HTTP ${res.status}`);
+    throw new ApiError(json?.error ?? `HTTP ${res.status}`, res.status);
   }
   return json;
 }
@@ -99,7 +117,10 @@ export async function fetchProfileFresh(
     | (ProfileResponse & { error?: string })
     | null;
   if (!res.ok || !json || json.error) {
-    throw new Error(json?.error ?? `profil illisible (HTTP ${res.status})`);
+    throw new ApiError(
+      json?.error ?? `profil illisible (HTTP ${res.status})`,
+      res.status
+    );
   }
   return json;
 }
@@ -220,4 +241,157 @@ export async function moveToCharacter(opts: {
     log(`❌ ${name} : ${e instanceof Error ? e.message : "transfert impossible"}`);
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Mise à jour locale du profil
+// ---------------------------------------------------------------------------
+
+/*
+ * Après une écriture, Bungie met plusieurs secondes à servir le nouvel état :
+ * `GetProfile` renvoie encore l'ancienne arme équipée ou l'ancien mod, et
+ * l'écran semblait figé jusqu'à ce qu'on recharge la page à la main.
+ *
+ * On applique donc le changement au profil déjà en mémoire — l'action a été
+ * confirmée par Bungie, on sait ce qu'elle a produit — puis on relit le profil
+ * en arrière-plan. Si la relecture est encore en retard, on lui réapplique le
+ * changement plutôt que de revenir en arrière sous les yeux du joueur.
+ */
+
+/** Copie superficielle des seuls niveaux qu'on va modifier. */
+function cloneInventories(profile: ProfileResponse): ProfileResponse {
+  const next: ProfileResponse = { ...profile };
+  if (profile.characterEquipment?.data) {
+    next.characterEquipment = {
+      ...profile.characterEquipment,
+      data: Object.fromEntries(
+        Object.entries(profile.characterEquipment.data).map(([id, inv]) => [
+          id,
+          { ...inv, items: [...inv.items] },
+        ])
+      ),
+    };
+  }
+  if (profile.characterInventories?.data) {
+    next.characterInventories = {
+      ...profile.characterInventories,
+      data: Object.fromEntries(
+        Object.entries(profile.characterInventories.data).map(([id, inv]) => [
+          id,
+          { ...inv, items: [...inv.items] },
+        ])
+      ),
+    };
+  }
+  if (profile.profileInventory?.data) {
+    next.profileInventory = {
+      ...profile.profileInventory,
+      data: {
+        ...profile.profileInventory.data,
+        items: [...profile.profileInventory.data.items],
+      },
+    };
+  }
+  return next;
+}
+
+/** Instance actuellement portée dans cet emplacement, s'il y en a une. */
+export function equippedInstance(
+  profile: ProfileResponse,
+  characterId: string,
+  bucketHash: number
+): string | undefined {
+  const items = profile.characterEquipment?.data?.[characterId]?.items ?? [];
+  return items.find((i) => i.bucketHash === bucketHash)?.itemInstanceId;
+}
+
+/**
+ * Équipe un objet dans le profil en mémoire : il rejoint l'équipement du
+ * personnage, et la pièce qu'il remplace retombe dans son inventaire — c'est
+ * exactement ce que fait le jeu.
+ */
+export function applyEquipLocally(
+  profile: ProfileResponse,
+  opts: { characterId: string; instanceId: string; bucketHash: number }
+): ProfileResponse {
+  const { characterId, instanceId, bucketHash } = opts;
+  const next = cloneInventories(profile);
+
+  // 1. Retrouver l'objet et le retirer de là où il était.
+  let moved: ProfileItem | undefined;
+  const vault = next.profileInventory?.data;
+  if (vault) {
+    const i = vault.items.findIndex((it) => it.itemInstanceId === instanceId);
+    if (i >= 0) moved = vault.items.splice(i, 1)[0];
+  }
+  for (const inv of Object.values(next.characterInventories?.data ?? {})) {
+    if (moved) break;
+    const i = inv.items.findIndex((it) => it.itemInstanceId === instanceId);
+    if (i >= 0) moved = inv.items.splice(i, 1)[0];
+  }
+  for (const inv of Object.values(next.characterEquipment?.data ?? {})) {
+    if (moved) break;
+    const i = inv.items.findIndex((it) => it.itemInstanceId === instanceId);
+    if (i >= 0) moved = inv.items.splice(i, 1)[0];
+  }
+  if (!moved) return profile;
+
+  // 2. Déséquiper ce qui occupait l'emplacement.
+  const gear = next.characterEquipment?.data?.[characterId];
+  if (!gear) return profile;
+  const previous = gear.items.findIndex((it) => it.bucketHash === bucketHash);
+  if (previous >= 0) {
+    const [old] = gear.items.splice(previous, 1);
+    const bag = next.characterInventories?.data?.[characterId];
+    if (bag) bag.items.push(old);
+  }
+
+  // 3. Poser le nouvel objet, dans le bucket de l'emplacement.
+  gear.items.push({ ...moved, bucketHash });
+  return next;
+}
+
+/** Remplace les emplacements d'une instance par ceux que Bungie vient de renvoyer. */
+export function applySocketsLocally(
+  profile: ProfileResponse,
+  instanceId: string,
+  sockets: SocketState[]
+): ProfileResponse {
+  const components = profile.itemComponents ?? {};
+  return {
+    ...profile,
+    itemComponents: {
+      ...components,
+      sockets: {
+        ...components.sockets,
+        data: {
+          ...(components.sockets?.data ?? {}),
+          [instanceId]: { sockets },
+        },
+      },
+    },
+  };
+}
+
+/** Bascule un drapeau d'état (verrouillé, pointé) sur une instance. */
+export function applyItemStateLocally(
+  profile: ProfileResponse,
+  instanceId: string,
+  flag: number,
+  on: boolean
+): ProfileResponse {
+  const next = cloneInventories(profile);
+  const lists: ProfileItem[][] = [
+    ...(next.profileInventory?.data ? [next.profileInventory.data.items] : []),
+    ...Object.values(next.characterInventories?.data ?? {}).map((i) => i.items),
+    ...Object.values(next.characterEquipment?.data ?? {}).map((i) => i.items),
+  ];
+  for (const items of lists) {
+    const i = items.findIndex((it) => it.itemInstanceId === instanceId);
+    if (i < 0) continue;
+    const state = items[i].state ?? 0;
+    items[i] = { ...items[i], state: on ? state | flag : state & ~flag };
+    return next;
+  }
+  return profile;
 }
