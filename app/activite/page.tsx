@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RaIcon from "@/components/RaIcon";
 import { loadDefs } from "@/lib/manifest-client";
 import { BUNGIE_ROOT, CLASS_NAMES } from "@/lib/destiny-constants";
@@ -234,27 +234,33 @@ export default function ActivityPage() {
     };
   }, [tab, defs, weaponChar]);
 
+  /*
+   * Le classement du clan ne se charge qu'une fois.
+   *
+   * Écouter `clanBusy` faisait tourner la roue sans fin : passer l'indicateur
+   * à vrai relançait l'effet, dont le nettoyage annulait la requête déjà
+   * partie. La réponse arrivait bien, plus personne ne l'attendait. Un verrou
+   * hors du cycle de rendu suffit, et l'effet ne dépend plus que de l'onglet.
+   */
+  const clanRequested = useRef(false);
+
   useEffect(() => {
-    if (tab !== "clan" || clan || clanBusy) return;
-    let cancelled = false;
+    if (tab !== "clan" || clanRequested.current) return;
+    clanRequested.current = true;
     setClanBusy(true);
     setClanError("");
     (async () => {
       try {
-        const data = await fetchClanStats();
-        if (!cancelled) setClan(data);
+        setClan(await fetchClanStats());
       } catch (e) {
-        if (!cancelled) {
-          setClanError(e instanceof Error ? e.message : "Clan illisible");
-        }
+        setClanError(e instanceof Error ? e.message : "Clan illisible");
+        // Une panne réseau ne doit pas condamner l'onglet : on pourra réessayer.
+        clanRequested.current = false;
       } finally {
-        if (!cancelled) setClanBusy(false);
+        setClanBusy(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, clan, clanBusy]);
+  }, [tab]);
 
   async function openReport(instanceId: string) {
     if (!defs) return;
