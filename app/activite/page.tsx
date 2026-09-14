@@ -938,11 +938,9 @@ function WeaponRowView({ weapon }: { weapon: RecentWeaponRow }) {
 
 type ClanSortKey =
   | "secondsPlayed"
-  | "activitiesCleared"
   | "kills"
   | "killsDeathsRatio"
-  | "pvpWins"
-  | "raidClears";
+  | "pvpWins";
 
 const CLAN_COLUMNS: {
   key: ClanSortKey;
@@ -955,12 +953,6 @@ const CLAN_COLUMNS: {
     label: "Temps de jeu",
     hint: "Manette en main, PvE et Creuset confondus.",
     format: (m) => formatPlaytime(m.secondsPlayed),
-  },
-  {
-    key: "activitiesCleared",
-    label: "Activités terminées",
-    hint: "Menées jusqu'à l'écran de fin.",
-    format: (m) => m.activitiesCleared.toLocaleString("fr-FR"),
   },
   {
     key: "kills",
@@ -979,12 +971,6 @@ const CLAN_COLUMNS: {
     label: "Victoires PvP",
     hint: "Parties gagnées au Creuset.",
     format: (m) => m.pvpWins.toLocaleString("fr-FR"),
-  },
-  {
-    key: "raidClears",
-    label: "Raids terminés",
-    hint: "Complétions de raid, toutes destinations confondues.",
-    format: (m) => m.raidClears.toLocaleString("fr-FR"),
   },
 ];
 
@@ -1076,10 +1062,6 @@ function ClanTab({
                   <th className="w-10">#</th>
                   <th>Gardien</th>
                   <th className="text-right">{column.label}</th>
-                  <th className="text-right hidden md:table-cell">
-                    Activités terminées
-                  </th>
-                  <th className="text-right hidden lg:table-cell">Raids</th>
                 </tr>
               </thead>
               <tbody>
@@ -1120,14 +1102,6 @@ function ClanTab({
                     </td>
                     <td className="text-right font-mono">
                       {member.private ? "—" : column.format(member)}
-                    </td>
-                    <td className="text-right font-mono hidden md:table-cell">
-                      {member.private
-                        ? "—"
-                        : member.activitiesCleared.toLocaleString("fr-FR")}
-                    </td>
-                    <td className="text-right font-mono hidden lg:table-cell">
-                      {member.private ? "—" : member.raidClears}
                     </td>
                   </tr>
                 ))}

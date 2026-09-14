@@ -12,12 +12,18 @@ export interface ItemDef {
   displayProperties: DisplayProperties;
   itemType: number;
   itemTypeDisplayName?: string;
+  /** « Fusil à impulsion légendaire » : type et rareté en une ligne */
+  itemTypeAndTierDisplayName?: string;
   classType: number; // 0 Titan, 1 Chasseur, 2 Arcaniste, 3 Tous
   inventory?: {
     bucketTypeHash: number;
     tierType: number;
     tierTypeName?: string;
   };
+  /** 1 primaires, 2 spéciales, 3 lourdes */
+  equippingBlock?: { ammoType?: number };
+  /** Filigrane de saison superposé à l'icône */
+  iconWatermark?: string;
   defaultDamageTypeHash?: number;
   screenshot?: string;
   flavorText?: string;

@@ -17,6 +17,8 @@ import {
   persistLoadouts,
   type Loadout,
 } from "@/lib/loadouts";
+import { instanceFromProfile } from "@/lib/item-info";
+import { useInspectItem } from "@/components/ItemInspector";
 import type {
   Character,
   Defs,
@@ -42,6 +44,7 @@ export default function LoadoutsPage() {
   const [loadouts, setLoadouts] = useState<Loadout[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const inspect = useInspectItem();
   const [log, setLog] = useState<string[]>([]);
   const [slotIndex, setSlotIndex] = useState(0);
   const [nameHash, setNameHash] = useState<number>(0);
@@ -662,9 +665,17 @@ export default function LoadoutsPage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         key={it.itemInstanceId}
+                        {...inspect({
+                          itemHash: it.itemHash,
+                          instanceId: it.itemInstanceId,
+                          instance: instanceFromProfile(
+                            profile,
+                            it.itemInstanceId
+                          ),
+                        })}
+                        className="cursor-pointer"
                         src={`${BUNGIE_ROOT}${icon}`}
                         alt=""
-                        title={def?.displayProperties?.name}
                       />
                     ) : null;
                   })}

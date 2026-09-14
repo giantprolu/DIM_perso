@@ -20,6 +20,8 @@ import {
   type ItemLocation,
 } from "@/lib/d2-actions";
 import { findDuplicates, type DuplicateGroup } from "@/lib/item-detail";
+import { instanceFromProfile } from "@/lib/item-info";
+import { useInspectItem } from "@/components/ItemInspector";
 import type {
   Character,
   Defs,
@@ -66,6 +68,7 @@ export default function WeaponsPage() {
   const [damageFilter, setDamageFilter] = useState<string>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const inspect = useInspectItem();
 
   useEffect(() => {
     let cancelled = false;
@@ -471,7 +474,15 @@ export default function WeaponsPage() {
                 {duplicates.map((g) => (
                   <div
                     key={g.itemHash}
-                    className="flex items-center gap-3 bg-base-300 rounded-box px-3 py-2"
+                    {...inspect({
+                      itemHash: g.itemHash,
+                      instanceId: g.copies[0]?.instanceId,
+                      instance: instanceFromProfile(
+                        profile,
+                        g.copies[0]?.instanceId
+                      ),
+                    })}
+                    className="flex items-center gap-3 bg-base-300 rounded-box px-3 py-2 cursor-pointer"
                   >
                     {g.icon && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -533,7 +544,14 @@ export default function WeaponsPage() {
                   shown.map((w) => (
                     <tr key={w.id}>
                       <td>
-                        <div className="flex items-center gap-3">
+                        <div
+                          {...inspect({
+                            itemHash: w.itemHash,
+                            instanceId: w.id,
+                            instance: instanceFromProfile(profile, w.id),
+                          })}
+                          className="flex items-center gap-3 cursor-pointer"
+                        >
                           {w.icon ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img

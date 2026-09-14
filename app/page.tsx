@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import RaIcon from "@/components/RaIcon";
+import { useInspectItem } from "@/components/ItemInspector";
 import { loadDefs } from "@/lib/manifest-client";
 import { BUNGIE_ROOT } from "@/lib/destiny-constants";
 import { ICONS, familyStyle } from "@/lib/rpg-icons";
@@ -405,39 +406,6 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ── Devises ── */}
-      {view.currencies.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <SectionTitle icon={ICONS.currency} title="Devises" />
-          <div className="flex flex-wrap gap-2">
-            {view.currencies.map((c) => (
-              <div
-                key={c.itemHash}
-                className="flex items-center gap-2 bg-base-200 border border-base-300 rounded-box px-3 py-2"
-                title={c.name}
-              >
-                {c.icon && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    className="w-6 h-6 rounded"
-                    src={`${BUNGIE_ROOT}${c.icon}`}
-                    alt=""
-                  />
-                )}
-                <div className="leading-tight">
-                  <div className="font-mono text-sm">
-                    {formatNumber(c.quantity)}
-                  </div>
-                  <div className="text-[10px] opacity-50 max-w-28 truncate">
-                    {c.name}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* ── Le reste du site ── */}
       <section className="flex flex-col gap-3">
         <SectionTitle icon={ICONS.activity} title="Aller plus loin" />
@@ -485,6 +453,8 @@ function Header({
   onRefresh: () => void;
   refreshing: boolean;
 }) {
+  const inspect = useInspectItem();
+
   return (
     <div className="flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-3 min-w-0">
@@ -514,6 +484,38 @@ function Header({
           </div>
         </div>
       </div>
+
+      {/*
+        Les devises se lisent avec le profil, pas au bas de la page : c'est le
+        même geste que d'ouvrir son inventaire pour savoir ce qu'on peut
+        acheter. La barre de navigation reste réservée aux pages.
+      */}
+      {view.currencies.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+          {view.currencies.map((c) => (
+            <div
+              key={c.itemHash}
+              {...inspect({ itemHash: c.itemHash })}
+              className="flex items-center gap-1.5 bg-base-200 border border-base-300 rounded-box px-2 py-1 cursor-pointer hover:border-primary transition-colors"
+            >
+              {c.icon ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="w-5 h-5 rounded"
+                  src={`${BUNGIE_ROOT}${c.icon}`}
+                  alt=""
+                />
+              ) : (
+                <RaIcon icon={ICONS.currency} className="opacity-60" />
+              )}
+              <span className="font-mono text-xs tabular-nums">
+                {formatNumber(c.quantity)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <button
         className="btn btn-sm btn-outline btn-primary"
         onClick={onRefresh}

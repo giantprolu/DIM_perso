@@ -33,8 +33,12 @@ export async function GET(request: NextRequest) {
 
   const type = request.nextUrl.searchParams.get("type");
   const id = request.nextUrl.searchParams.get("id");
-  // Une fiche « légère » (survol) se contente des personnages : deux fois
-  // moins de données, et pas d'appel aux statistiques historiques.
+  /*
+   * Fiche « légère » (survol) : l'écran personnage en miniature demande les
+   * personnages ET leur équipement porté (205) avec sa puissance (300). On
+   * laisse de côté les stats par objet (304) et les emplacements (305), qui
+   * doublent la charge utile pour un détail invisible à cette taille.
+   */
   const light = request.nextUrl.searchParams.get("light") === "1";
 
   if (!type || !id || !/^\d+$/.test(type) || !/^\d+$/.test(id)) {
@@ -45,7 +49,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const components = light ? "100,200,204" : COMPONENTS;
+    const components = light ? "100,200,204,205,300" : COMPONENTS;
     const profilePromise = bungieGet<ProfileResponse>(
       `/Destiny2/${type}/Profile/${id}/?components=${components}`,
       ctx.access

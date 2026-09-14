@@ -31,6 +31,8 @@ import {
   type ItemLocation,
 } from "@/lib/d2-actions";
 import { buildItemDetail, type ItemDetail } from "@/lib/item-detail";
+import { instanceFromProfile } from "@/lib/item-info";
+import { useInspectItem } from "@/components/ItemInspector";
 import type {
   Character,
   Defs,
@@ -106,6 +108,7 @@ export default function PersoPage() {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inspect = useInspectItem();
 
   function pushLog(m: string) {
     setLog((prev) => [...prev.slice(-8), m]);
@@ -525,6 +528,19 @@ export default function PersoPage() {
                 <button
                   key={c.instanceId}
                   disabled={busy}
+                  /*
+                   * Survol : la fiche de l'alternative, pour choisir sans
+                   * l'équiper. Le clic reste l'équipement — c'est le geste
+                   * attendu dans cette liste.
+                   */
+                  {...inspect(
+                    {
+                      itemHash: c.itemHash,
+                      instanceId: c.instanceId,
+                      instance: instanceFromProfile(profile, c.instanceId),
+                    },
+                    { clickable: false }
+                  )}
                   className="flex items-center gap-2 w-full text-left rounded px-1 py-1 hover:bg-base-100 disabled:opacity-40"
                   onClick={() => equipCandidate(c)}
                 >

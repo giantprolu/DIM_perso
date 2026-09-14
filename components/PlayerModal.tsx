@@ -20,6 +20,8 @@ import {
   summarizePlayer,
   type PlayerData,
 } from "@/lib/player-client";
+import { instanceFromProfile } from "@/lib/item-info";
+import { useInspectItem } from "@/components/ItemInspector";
 import type { Defs } from "@/lib/types";
 
 /**
@@ -63,6 +65,7 @@ export default function PlayerModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [charId, setCharId] = useState("");
+  const inspect = useInspectItem();
 
   useEffect(() => {
     let cancelled = false;
@@ -313,7 +316,15 @@ export default function PlayerModal({
                         {gear.map((item) => (
                           <div
                             key={item.instanceId}
-                            className="flex items-center gap-2.5 bg-base-200 rounded-box px-2 py-1.5"
+                            {...inspect({
+                              itemHash: item.itemHash,
+                              instanceId: item.instanceId,
+                              instance: instanceFromProfile(
+                                data?.profile,
+                                item.instanceId
+                              ),
+                            })}
+                            className="flex items-center gap-2.5 bg-base-200 rounded-box px-2 py-1.5 cursor-pointer hover:bg-base-300 transition-colors"
                           >
                             {item.icon && (
                               // eslint-disable-next-line @next/next/no-img-element

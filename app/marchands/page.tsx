@@ -14,6 +14,7 @@ import {
   type VendorOffer,
   type VendorSummary,
 } from "@/lib/vendor-engine";
+import { useInspectItem } from "@/components/ItemInspector";
 import type {
   Character,
   Defs,
@@ -54,6 +55,7 @@ export default function MarchandsPage() {
   const [vendorsData, setVendorsData] = useState<VendorsResponse | null>(null);
   const [selectedChar, setSelectedChar] = useState("");
   const [vendorFilter, setVendorFilter] = useState<number | "all">("all");
+  const inspect = useInspectItem();
   const [onlyAffordable, setOnlyAffordable] = useState(false);
   const [loadingVendors, setLoadingVendors] = useState(false);
 
@@ -191,7 +193,11 @@ export default function MarchandsPage() {
         }`}
       >
         <div className="card-body p-4 gap-2">
-          <div className="flex items-start gap-3">
+          {/* En vente : le manifest suffit à juger l'objet avant de l'acheter. */}
+          <div
+            {...inspect({ itemHash: o.itemHash })}
+            className="flex items-start gap-3 cursor-pointer"
+          >
             {o.icon ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -258,7 +264,8 @@ export default function MarchandsPage() {
               {o.costs.map((c) => (
                 <span
                   key={c.itemHash}
-                  className={`flex items-center gap-1 ${
+                  {...inspect({ itemHash: c.itemHash })}
+                  className={`flex items-center gap-1 cursor-pointer ${
                     c.affordable ? "" : "text-error"
                   }`}
                   title={`Tu possèdes ${c.owned}`}

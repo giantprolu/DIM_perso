@@ -43,6 +43,8 @@ import {
   loadLoadouts,
   persistLoadouts,
 } from "@/lib/loadouts";
+import { instanceFromProfile } from "@/lib/item-info";
+import { useInspectItem } from "@/components/ItemInspector";
 import type {
   Character,
   Defs,
@@ -183,6 +185,7 @@ export default function OptimizerPage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [targetChar, setTargetChar] = useState("");
   const [busy, setBusy] = useState(false);
+  const inspect = useInspectItem();
   const [log, setLog] = useState<string[]>([]);
   const [saveAsLoadout, setSaveAsLoadout] = useState(true);
   const [mainTab, setMainTab] = useState<"builds" | "mods">("builds");
@@ -842,12 +845,16 @@ export default function OptimizerPage() {
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   key={id}
-                                  className={`w-7 h-7 rounded border border-base-300${
+                                  {...inspect({
+                                    itemHash: p.itemHash,
+                                    instanceId: id,
+                                    instance: instanceFromProfile(profile, id),
+                                  })}
+                                  className={`w-7 h-7 rounded border border-base-300 cursor-pointer${
                                     p.isExotic ? " !border-[#ceae33]" : ""
                                   }`}
                                   src={`${BUNGIE_ROOT}${p.icon}`}
                                   alt={p.name}
-                                  title={p.name}
                                 />
                               ) : null;
                             })}
@@ -1191,14 +1198,21 @@ export default function OptimizerPage() {
                                       // eslint-disable-next-line @next/next/no-img-element
                                       <img
                                         key={id}
-                                        className={`w-7 h-7 rounded border border-base-300${
+                                        {...inspect({
+                                          itemHash: p.itemHash,
+                                          instanceId: id,
+                                          instance: instanceFromProfile(
+                                            profile,
+                                            id
+                                          ),
+                                        })}
+                                        className={`w-7 h-7 rounded border border-base-300 cursor-pointer${
                                           p.isExotic
                                             ? " !border-[#ceae33]"
                                             : ""
                                         }`}
                                         src={`${BUNGIE_ROOT}${p.icon}`}
                                         alt={p.name}
-                                        title={p.name}
                                       />
                                     ) : null;
                                   })}
@@ -1293,7 +1307,17 @@ export default function OptimizerPage() {
                                     {ARMOR_BUCKETS[p.slot]}
                                   </td>
                                   <td>
-                                    <div className="flex items-center gap-2">
+                                    <div
+                                      {...inspect({
+                                        itemHash: p.itemHash,
+                                        instanceId: id,
+                                        instance: instanceFromProfile(
+                                          profile,
+                                          id
+                                        ),
+                                      })}
+                                      className="flex items-center gap-2 cursor-pointer"
+                                    >
                                       {p.icon ? (
                                         // eslint-disable-next-line @next/next/no-img-element
                                         <img

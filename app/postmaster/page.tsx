@@ -9,6 +9,7 @@ import {
   TIER_EXOTIC,
 } from "@/lib/destiny-constants";
 import { pullFromPostmaster, sleep } from "@/lib/d2-actions";
+import { useInspectItem } from "@/components/ItemInspector";
 import type { Character, Defs, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
@@ -37,6 +38,7 @@ export default function PostmasterPage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [selectedChar, setSelectedChar] = useState("");
   const [busy, setBusy] = useState(false);
+  const inspect = useInspectItem();
   const [log, setLog] = useState<string[]>([]);
   const [autoPull, setAutoPull] = useState(false);
   const autoDone = useRef(false);
@@ -391,7 +393,13 @@ export default function PostmasterPage() {
                   {items.map((item) => (
                     <tr key={item.key}>
                       <td>
-                        <div className="flex items-center gap-3">
+                        <div
+                          {...inspect({
+                            itemHash: item.itemHash,
+                            instanceId: item.itemInstanceId,
+                          })}
+                          className="flex items-center gap-3 cursor-pointer"
+                        >
                           {item.icon ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
