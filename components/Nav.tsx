@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import CurrencyBar from "@/components/CurrencyBar";
 import type { SessionInfo } from "@/lib/types";
 
 const LINKS = [
@@ -48,7 +49,8 @@ export default function Nav() {
         ))}
       </div>
       <div className="flex-1" />
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        <CurrencyBar enabled={Boolean(session?.loggedIn)} />
         {session?.loggedIn ? (
           <div className="dropdown dropdown-end">
             <div

@@ -18,6 +18,9 @@ const SCOPES: Record<string, string> = {
   perso: "102,200,201,205,300,304,305,310",
   // La liste des personnages, et rien d'autre
   characters: "200",
+  // Monnaies : 103 celles qu'épingle Bungie, 102 le coffre et 201 les sacs,
+  // où vivent les matériaux d'échange (noyaux, prismes, fragments)
+  currencies: "102,103,200,201",
   // Maître des postes : inventaires de personnage + instances (puissance)
   postmaster: "200,201,300",
   // Équipement porté + sockets + mods réellement insérables (310) :

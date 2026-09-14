@@ -8,6 +8,7 @@ import {
   ITEM_TYPE_QUEST_STEP,
   WEAPON_SLOT_ORDER,
 } from "./destiny-constants";
+import { pinnedCurrencies, type CurrencyRow } from "./currencies";
 import { activityFamily, type ActivityFamily } from "./rpg-icons";
 import { buildArtifact, buildRanks, buildSeasonPass } from "./weekly-engine";
 import type {
@@ -82,12 +83,8 @@ export interface CharacterCard {
   milestonesTotal: number;
 }
 
-export interface CurrencyView {
-  itemHash: number;
-  name: string;
-  icon?: string;
-  quantity: number;
-}
+/** Les devises du tableau de bord sont celles de `lib/currencies`. */
+export type CurrencyView = CurrencyRow;
 
 export interface RecentActivity {
   instanceId: string;
@@ -338,36 +335,12 @@ export function buildDashboard(
     artifact,
     seasonPass,
     seasonName,
-    currencies: buildCurrencies(defs, profile),
+    currencies: pinnedCurrencies(defs, profile),
     ranks,
     recent: buildRecent(defs, payload, cards),
     alerts: buildAlerts(cards),
     totalHoursPlayed: cards.reduce((a, c) => a + c.hoursPlayed, 0),
   };
-}
-
-/**
- * Les devises que Bungie épingle lui-même (composant 103) : éclat, poussière,
- * noyaux… La liste évolue à chaque saison, on la prend telle quelle plutôt
- * que d'entretenir une collection de hashs.
- */
-function buildCurrencies(
-  defs: Defs,
-  profile: ProfileResponse
-): CurrencyView[] {
-  const out: CurrencyView[] = [];
-  for (const item of profile.profileCurrencies?.data?.items ?? []) {
-    const def = defs.items?.[item.itemHash];
-    const name = def?.displayProperties?.name;
-    if (!name) continue;
-    out.push({
-      itemHash: item.itemHash,
-      name,
-      icon: def?.displayProperties?.icon,
-      quantity: item.quantity,
-    });
-  }
-  return out;
 }
 
 /**
