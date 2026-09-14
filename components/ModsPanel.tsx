@@ -16,6 +16,7 @@ import {
 import {
   bestModCombo,
   buildItemModContext,
+  statShares,
   verifySockets,
   type ItemModContext,
   type ModCombo,
@@ -23,17 +24,15 @@ import {
 } from "@/lib/mod-engine";
 import { applyModCombo } from "@/lib/mod-apply";
 import { fetchItemSockets, fetchProfileFresh, sleep } from "@/lib/d2-actions";
+import { instanceFromProfile } from "@/lib/item-info";
+import { useInspectItem } from "@/components/ItemInspector";
 import type { Character, Defs, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
 type Tab = "weapons" | "armor";
 
-const WEIGHT_STEPS = [
-  { v: 0, label: "Ign" },
-  { v: 1, label: "×1" },
-  { v: 2, label: "×2" },
-  { v: 3, label: "×3" },
-];
+/** Coefficient maximal proposable à une stat. */
+const MAX_WEIGHT = 5;
 
 interface GearItem {
   bucketHash: number;
@@ -52,7 +51,7 @@ interface Plan {
   combo: ModCombo;
 }
 
-/** Poids par défaut : tout compte pareil, on cherche le meilleur total. */
+/** Par défaut, chaque stat pèse pareil : une part de priorité identique. */
 function defaultWeights(stats: number[]): StatWeights {
   return Object.fromEntries(stats.map((h) => [h, 1]));
 }
@@ -73,6 +72,7 @@ export default function ModsPanel() {
   );
   const [fillEmpty, setFillEmpty] = useState(true);
   const [busy, setBusy] = useState(false);
+  const inspect = useInspectItem();
   const [log, setLog] = useState<string[]>([]);
 
   function pushLog(m: string) {
@@ -166,6 +166,18 @@ export default function ModsPanel() {
 
   const plans: Plan[] = useMemo(() => {
     if (!defs || !profile) return [];
+    /*
+     * L'ARMURE se planifie à la SUITE, pas pièce par pièce isolément :
+     * chacune reçoit le cumul des précédentes. C'est ce qui donne du sens aux
+     * coefficients — un même mod ne pouvant être posé deux fois sur une
+     * pièce, une pièce seule verserait tout dans la stat la mieux notée. En
+     * connaissant ce qui est déjà acquis, la suivante sert celle qui est en
+     * retard sur sa part.
+     *
+     * Les ARMES, elles, restent indépendantes : leurs stats ne s'additionnent
+     * pas d'une arme à l'autre, chacune mérite son meilleur mod.
+     */
+    const acquiredStats = tab === "armor" ? new Map<number, number>() : undefined;
     return gear.map((item) => {
       const context = buildItemModContext({
         defs,
@@ -178,7 +190,12 @@ export default function ModsPanel() {
         energyCapacity: tab === "armor" ? item.energyCapacity : 0,
         energyUsed: tab === "armor" ? item.energyUsed : undefined,
       });
-      const combo = bestModCombo({ context, weights, fillEmpty });
+      const combo = bestModCombo({ context, weights, fillEmpty, acquiredStats });
+      if (acquiredStats) {
+        for (const [h, v] of combo.totals) {
+          acquiredStats.set(h, (acquiredStats.get(h) ?? 0) + v);
+        }
+      }
       return { item, context, combo };
     });
   }, [
@@ -194,6 +211,9 @@ export default function ModsPanel() {
   ]);
 
   const totalChanges = plans.reduce((a, p) => a + p.combo.changes.length, 0);
+
+  /** Ce que les coefficients demandent réellement, en part du total. */
+  const shares = useMemo(() => statShares(weights), [weights]);
 
   const statName = (hash: number) =>
     defs?.stats?.[hash]?.displayProperties?.name ?? `Stat ${hash}`;
@@ -362,7 +382,7 @@ export default function ModsPanel() {
         <div className="card-body p-4 gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm font-medium">
-              Importance de chaque {tab === "weapons" ? "stat d'arme" : "stat d'armure"}
+              Coefficient de chaque {tab === "weapons" ? "stat d'arme" : "stat d'armure"}
             </span>
             <button
               className="btn btn-ghost btn-xs"
@@ -383,27 +403,66 @@ export default function ModsPanel() {
             </label>
           </div>
 
+          <p className="text-xs opacity-60 -mt-1">
+            Les coefficients sont relatifs : ×3 face à ×1 vise environ trois fois
+            plus de points, pas tout ou rien. Le pourcentage montre la part de
+            priorité qui en découle
+            {tab === "armor"
+              ? ", répartie sur l'ensemble des cinq pièces."
+              : ", appliquée arme par arme."}
+          </p>
+
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {relevantStats.map((h) => (
-              <div key={h} className="flex items-center gap-2">
-                <span className="text-xs flex-1 truncate opacity-80">
-                  {statName(h)}
-                </span>
-                <div className="join">
-                  {WEIGHT_STEPS.map((w) => (
+            {relevantStats.map((h) => {
+              const w = weights[h] ?? 0;
+              const share = shares.get(h) ?? 0;
+              return (
+                <div key={h} className="flex items-center gap-2">
+                  <span className="text-xs flex-1 truncate opacity-80">
+                    {statName(h)}
+                  </span>
+                  <span
+                    className={`text-xs font-mono w-10 text-right ${
+                      w > 0 ? "opacity-70" : "opacity-30"
+                    }`}
+                    title="Part de la priorité totale"
+                  >
+                    {w > 0 ? `${Math.round(share * 100)} %` : "—"}
+                  </span>
+                  <div className="join">
                     <button
-                      key={w.v}
-                      className={`btn btn-xs join-item${
-                        (weights[h] ?? 0) === w.v ? " btn-primary" : " btn-ghost"
-                      }`}
-                      onClick={() => setWeights({ ...weights, [h]: w.v })}
+                      className="btn btn-xs join-item btn-ghost"
+                      disabled={w === 0}
+                      aria-label={`Baisser ${statName(h)}`}
+                      onClick={() => setWeights({ ...weights, [h]: w - 1 })}
                     >
-                      {w.label}
+                      −
                     </button>
-                  ))}
+                    <button
+                      className={`btn btn-xs join-item w-11${
+                        w > 0 ? " btn-primary" : " btn-ghost"
+                      }`}
+                      title={
+                        w > 0 ? "Ignorer cette stat" : "Revenir au coefficient ×1"
+                      }
+                      onClick={() =>
+                        setWeights({ ...weights, [h]: w > 0 ? 0 : 1 })
+                      }
+                    >
+                      {w > 0 ? `×${w}` : "Ign"}
+                    </button>
+                    <button
+                      className="btn btn-xs join-item btn-ghost"
+                      disabled={w >= MAX_WEIGHT}
+                      aria-label={`Monter ${statName(h)}`}
+                      onClick={() => setWeights({ ...weights, [h]: w + 1 })}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-3 flex-wrap border-t border-base-300 pt-3">
@@ -459,7 +518,15 @@ export default function ModsPanel() {
                   {plan.item.icon && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      className={`item-icon${plan.item.isExotic ? " exotic" : ""}`}
+                      {...inspect({
+                        itemHash: plan.item.itemHash,
+                        instanceId: plan.item.instanceId,
+                        instance: instanceFromProfile(
+                          profile,
+                          plan.item.instanceId
+                        ),
+                      })}
+                      className={`item-icon cursor-pointer${plan.item.isExotic ? " exotic" : ""}`}
                       src={`${BUNGIE_ROOT}${plan.item.icon}`}
                       alt=""
                     />

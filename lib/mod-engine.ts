@@ -320,8 +320,108 @@ export function buildItemModContext(opts: {
 // Recherche de la meilleure combinaison
 // ---------------------------------------------------------------------------
 
-/** Poids par stat : statHash → importance (0 = ignorée). */
+/**
+ * Poids par stat : statHash → coefficient d'importance (0 = stat ignorée).
+ *
+ * Les coefficients sont RELATIFS : seul leur rapport compte. `{mobilité: 2,
+ * résilience: 1}` et `{mobilité: 4, résilience: 2}` demandent la même chose,
+ * deux fois plus de mobilité que de résilience.
+ */
 export type StatWeights = Record<number, number>;
+
+/**
+ * Part de priorité de chaque stat : son coefficient ramené à une fraction du
+ * total (la somme fait 1). C'est la lecture utile d'un jeu de coefficients —
+ * « ×3 face à trois stats à ×1 » veut dire « la moitié de la priorité » — et
+ * c'est aussi ce que le solveur consomme.
+ */
+export function statShares(weights: StatWeights): Map<number, number> {
+  const entries = Object.entries(weights)
+    .map(([h, w]) => [Number(h), Math.max(0, w)] as const)
+    .filter(([, w]) => w > 0);
+  const total = entries.reduce((a, [, w]) => a + w, 0);
+  const shares = new Map<number, number>();
+  if (total === 0) return shares;
+  for (const [h, w] of entries) shares.set(h, w / total);
+  return shares;
+}
+
+/**
+ * Échelle des rendements décroissants, en points de stat.
+ *
+ * Un score purement linéaire (Σ coefficient × points) rend le coefficient le
+ * plus fort ABSORBANT : tant qu'un point de la stat à ×3 vaut plus qu'un point
+ * de celle à ×1, le solveur verse tout dans la première et les autres restent
+ * à zéro. Le coefficient agit alors en interrupteur, pas en priorité.
+ *
+ * D'où une utilité CONCAVE : la valeur du n-ième point d'une stat décroît à
+ * mesure qu'elle se remplit. La répartition VISE alors le rapport des
+ * coefficients au lieu du tout-ou-rien. Elle ne l'atteint pas toujours : les
+ * mods réels sont grossiers (+10 ou +5, un seul exemplaire par pièce) et un
+ * emplacement rempli vaut mieux qu'un emplacement vide, si bien qu'un ×3
+ * contre ×1 penche nettement vers la première stat sans forcément lui donner
+ * le triple. Pour exclure une stat, il reste le coefficient 0.
+ *
+ * L'échelle n'est qu'une unité de mesure : le nombre de points qui « remplit »
+ * une stat à qui l'on accorde 100 % de la priorité. Elle est calée sur la
+ * valeur d'un mod. L'arbitrage entre stats, lui, ne dépend que du rapport
+ * points / part — le changer d'échelle ne le déplace pas.
+ */
+const DIMINISHING_SCALE = 10;
+
+/** Tolérance de comparaison entre utilités (calculs en virgule flottante). */
+const EPS = 1e-9;
+
+/**
+ * Exploration bornée par sécurité. En pratique la recherche va jusqu'au bout
+ * (le budget d'énergie et la symétrie des emplacements jumeaux coupent
+ * l'essentiel des branches) ; ce plafond évite de figer l'interface sur une
+ * pièce aux emplacements anormalement nombreux.
+ */
+const MAX_NODES = 500_000;
+
+/**
+ * Utilité d'un jeu de totaux, stat par stat, dans l'ordre des parts.
+ * Concave au-dessus de zéro (rendements décroissants), linéaire en dessous :
+ * une pénalité se paie plein tarif.
+ *
+ * Chaque stat est mesurée à l'échelle de SA part : sans cela, une stat peu
+ * prioritaire profiterait quand même de rendements pleins sur ses premiers
+ * points et se servirait avant l'heure. Ramenée à sa part, la stat qui a déjà
+ * reçu son dû devient exactement aussi attirante que les autres — l'optimum
+ * se cale alors sur le rapport des coefficients, et il s'y tient à chaque
+ * étape (utile : les pièces sont planifiées l'une après l'autre).
+ */
+function utility(totals: number[], shares: number[]): number {
+  let u = 0;
+  for (let i = 0; i < shares.length; i++) {
+    const t = totals[i] / (shares[i] * DIMINISHING_SCALE);
+    u += shares[i] * (t > 0 ? Math.log1p(t) : t);
+  }
+  return u;
+}
+
+/** Apport d'un mod sur chaque stat prioritaire, dans l'ordre des parts. */
+function gainsOf(effects: StatEffect[], statHashes: number[]): number[] {
+  const gains = new Array<number>(statHashes.length).fill(0);
+  for (const e of effects) {
+    const i = statHashes.indexOf(e.statHash);
+    if (i >= 0) gains[i] += e.value;
+  }
+  return gains;
+}
+
+/**
+ * Majorant de l'utilité qu'un mod peut apporter, où qu'il soit posé.
+ * La pente de l'utilité ne dépasse jamais `1 / DIMINISHING_SCALE`, quelle que
+ * soit la part de la stat et ce qu'elle a déjà reçu : ce majorant reste donc
+ * valide partout. Il sert à explorer les mods prometteurs en premier.
+ */
+function boundOf(gains: number[]): number {
+  let b = 0;
+  for (const g of gains) if (g > 0) b += g / DIMINISHING_SCALE;
+  return b;
+}
 
 export interface ComboChoice {
   socketIndex: number;
@@ -345,9 +445,9 @@ export interface ModCombo {
   totals: Map<number, number>;
   /** Variation par rapport à l'état actuel */
   deltas: Map<number, number>;
-  /** Score pondéré de la combinaison */
+  /** Utilité de la combinaison au regard des coefficients (échelle interne) */
   score: number;
-  /** Gain de score par rapport à l'état actuel */
+  /** Gain d'utilité par rapport à l'état actuel */
   scoreGain: number;
   energyUsed: number;
   energyCapacity: number;
@@ -359,28 +459,38 @@ interface Candidate {
   icon?: string;
   energyCost: number;
   effects: StatEffect[];
-  score: number;
+  /** Apport sur chaque stat prioritaire, dans l'ordre des parts */
+  gains: number[];
+  /** Majorant de l'utilité apportée par ce mod */
+  bound: number;
   /** true pour « on garde ce qui est déjà là » */
   keep: boolean;
   /** un plug vide peut occuper plusieurs emplacements, pas un vrai mod */
   unique: boolean;
 }
 
-function scoreOf(effects: StatEffect[], weights: StatWeights): number {
-  let s = 0;
-  for (const e of effects) s += (weights[e.statHash] ?? 0) * e.value;
-  return s;
+/** a vaut b partout, et le dépasse quelque part : b ne sert plus à rien. */
+function dominates(a: Candidate, b: Candidate): boolean {
+  if (a.energyCost > b.energyCost) return false;
+  let strict = a.energyCost < b.energyCost;
+  for (let i = 0; i < a.gains.length; i++) {
+    if (a.gains[i] < b.gains[i]) return false;
+    if (a.gains[i] > b.gains[i]) strict = true;
+  }
+  return strict;
 }
 
 /**
- * Réduit les candidats d'un emplacement à sa frontière de Pareto
- * (meilleur score à coût d'énergie donné). Sans cela l'exploration
- * exhaustive serait inutilement large : un mod plus cher ET moins bon
- * qu'un autre ne peut jamais faire partie de l'optimum.
+ * Réduit les candidats d'un emplacement à sa frontière de Pareto : un mod plus
+ * cher et moins généreux sur CHAQUE stat prioritaire qu'un autre ne peut
+ * jamais faire partie de l'optimum. La comparaison porte sur le vecteur de
+ * stats, pas sur un score agrégé : avec des rendements décroissants, un mod au
+ * total plus faible peut très bien gagner parce qu'il alimente la stat encore
+ * en retard.
  *
- * `keepPerTier` conserve les ex æquo : deux mods de même valeur ne sont
- * interchangeables que tant qu'aucun n'est déjà pris par un autre
- * emplacement de la même pièce.
+ * `keepPerTier` conserve les ex æquo : deux mods identiques ne sont
+ * interchangeables que tant qu'aucun n'est déjà pris par un autre emplacement
+ * de la même pièce.
  */
 function paretoFilter(list: Candidate[], keepPerTier: number): Candidate[] {
   const kept: Candidate[] = [];
@@ -389,42 +499,33 @@ function paretoFilter(list: Candidate[], keepPerTier: number): Candidate[] {
 
   const sorted = list
     .filter((c) => !c.keep)
-    .sort((a, b) => a.energyCost - b.energyCost || b.score - a.score);
+    .sort((a, b) => a.energyCost - b.energyCost);
 
-  let bestScore = -Infinity;
-  let tierScore = NaN;
-  let tierCost = NaN;
-  let tierCount = 0;
+  const tiers = new Map<string, number>();
   for (const c of sorted) {
-    if (c.score > bestScore) {
-      kept.push(c);
-      bestScore = c.score;
-      tierScore = c.score;
-      tierCost = c.energyCost;
-      tierCount = 1;
-    } else if (
-      c.score === tierScore &&
-      c.energyCost === tierCost &&
-      tierCount < keepPerTier
-    ) {
-      kept.push(c);
-      tierCount++;
-    }
+    if (kept.some((k) => dominates(k, c))) continue;
+    const tier = `${c.energyCost}|${c.gains.join(",")}`;
+    const seen = tiers.get(tier) ?? 0;
+    if (seen >= keepPerTier) continue;
+    tiers.set(tier, seen + 1);
+    kept.push(c);
   }
   return kept;
 }
 
-function buildCandidates(socket: ModSocket, weights: StatWeights): Candidate[] {
+function buildCandidates(socket: ModSocket, statHashes: number[]): Candidate[] {
   const list: Candidate[] = [];
 
   // Garder ce qui est en place : toujours possible, coût déjà payé.
+  const currentGains = gainsOf(socket.currentEffects, statHashes);
   list.push({
     hash: socket.currentPlugHash ?? 0,
     name: socket.currentName ?? "Emplacement vide",
     icon: socket.currentIcon,
     energyCost: socket.currentCost,
     effects: socket.currentEffects,
-    score: scoreOf(socket.currentEffects, weights),
+    gains: currentGains,
+    bound: boundOf(currentGains),
     keep: true,
     unique: !socket.isEmpty && socket.currentPlugHash !== undefined,
   });
@@ -432,17 +533,18 @@ function buildCandidates(socket: ModSocket, weights: StatWeights): Candidate[] {
   for (const o of socket.options) {
     if (!o.canInsert) continue;
     if (o.hash === socket.currentPlugHash) continue; // déjà couvert par « garder »
-    const score = scoreOf(o.effects, weights);
-    // Un mod qui pénalise les stats visées ne peut jamais aider ici : la
-    // seconde passe se charge des emplacements restés vides.
-    if (score < 0) continue;
+    const gains = gainsOf(o.effects, statHashes);
+    // Un mod qui n'apporte rien aux stats priorisées ne peut pas aider ici :
+    // la seconde passe se charge des emplacements restés vides.
+    if (!gains.some((v) => v > 0)) continue;
     list.push({
       hash: o.hash,
       name: o.name,
       icon: o.icon,
       energyCost: o.energyCost,
       effects: o.effects,
-      score,
+      gains,
+      bound: boundOf(gains),
       keep: false,
       unique: true,
     });
@@ -455,7 +557,7 @@ function buildCandidates(socket: ModSocket, weights: StatWeights): Candidate[] {
  *
  * Recherche exhaustive avec élagage : les emplacements sont peu nombreux
  * (≤ 6) et chacun est réduit à sa frontière de Pareto, ce qui rend le
- * parcours instantané tout en restant EXACT — contrairement à un choix
+ * parcours quasi instantané tout en restant EXACT — contrairement à un choix
  * glouton, qui se trompe dès que le budget d'énergie serre.
  *
  * Contraintes respectées :
@@ -471,51 +573,127 @@ export function bestModCombo(opts: {
    * meilleur mod disponible plutôt que de les laisser vides.
    */
   fillEmpty?: boolean;
+  /**
+   * Points déjà acquis sur les pièces DÉJÀ planifiées.
+   *
+   * Indispensable pour que les coefficients s'expriment : un même mod ne
+   * pouvant être posé deux fois sur une pièce, une pièce prise isolément n'a
+   * qu'un ou deux emplacements utiles et verse forcément dans la stat la
+   * mieux notée. La répartition se joue donc ENTRE les pièces. En repartant
+   * du cumul, chaque pièce voit les rendements déjà entamés par les
+   * précédentes et sert la stat encore en retard sur son coefficient.
+   */
+  acquiredStats?: Map<number, number>;
 }): ModCombo {
-  const { context, weights, fillEmpty = true } = opts;
+  const { context, weights, fillEmpty = true, acquiredStats } = opts;
   const { sockets, energyCapacity, reservedEnergy } = context;
 
+  const shareMap = statShares(weights);
+  const statHashes = [...shareMap.keys()];
+  const shares = statHashes.map((h) => shareMap.get(h) ?? 0);
+  const acquired = statHashes.map((h) => acquiredStats?.get(h) ?? 0);
+
   const budget =
-    energyCapacity > 0 ? energyCapacity - reservedEnergy : Number.MAX_SAFE_INTEGER;
+    energyCapacity > 0
+      ? energyCapacity - reservedEnergy
+      : Number.MAX_SAFE_INTEGER;
 
   const perSocket = sockets.map((s) =>
-    paretoFilter(buildCandidates(s, weights), sockets.length)
+    paretoFilter(buildCandidates(s, statHashes), sockets.length)
+      // Les mods les plus prometteurs d'abord : une bonne solution trouvée
+      // tôt donne une borne haute, qui élague tout le reste du parcours.
+      .sort((a, b) => b.bound - a.bound)
   );
 
-  // Borne supérieure du score encore atteignable à partir de l'emplacement i,
-  // pour couper les branches sans avenir.
-  const suffixMax = new Array<number>(perSocket.length + 1).fill(0);
+  /*
+   * Gain maximal encore atteignable sur CHAQUE stat à partir de l'emplacement
+   * i. Combiné à la pente de l'utilité au point courant, cela majore ce que
+   * la fin du parcours peut encore rapporter — et comme cette pente s'écrase
+   * à mesure qu'une stat se remplit, la borne se resserre au fil de la
+   * descente, là où un simple « meilleur cas absolu » resterait aveugle.
+   */
+  const suffixGain: number[][] = Array.from(
+    { length: perSocket.length + 1 },
+    () => new Array<number>(statHashes.length).fill(0)
+  );
   for (let i = perSocket.length - 1; i >= 0; i--) {
-    const best = perSocket[i].reduce((a, c) => Math.max(a, c.score), 0);
-    suffixMax[i] = suffixMax[i + 1] + best;
+    for (let j = 0; j < statHashes.length; j++) {
+      let best = 0;
+      for (const c of perSocket[i]) if (c.gains[j] > best) best = c.gains[j];
+      suffixGain[i][j] = suffixGain[i + 1][j] + best;
+    }
   }
+
+  /** Majorant de l'utilité encore gagnable depuis l'emplacement i. */
+  const remainingBound = (i: number, totals: number[]): number => {
+    const row = suffixGain[i];
+    let b = 0;
+    for (let j = 0; j < row.length; j++) {
+      if (row[j] <= 0) continue;
+      const t = totals[j] > 0 ? totals[j] : 0;
+      // Pente de l'utilité de cette stat à son niveau actuel.
+      b += row[j] / (DIMINISHING_SCALE + t / shares[j]);
+    }
+    return b;
+  };
 
   let bestScore = -Infinity;
   let bestCost = Number.MAX_SAFE_INTEGER;
   let bestPick: Candidate[] = [];
   let found = false;
+  let nodes = 0;
 
   const pick: Candidate[] = new Array(perSocket.length);
   const used = new Set<number>();
+  // L'exploration raisonne sur le cumul : les rendements déjà entamés par
+  // les pièces précédentes pèsent sur les choix de celle-ci.
+  const totals = [...acquired];
 
-  const dfs = (i: number, score: number, cost: number) => {
-    if (found && score + suffixMax[i] < bestScore) return;
+  /*
+   * Deux emplacements qui offrent exactement les mêmes choix sont
+   * interchangeables : poser X sur le premier et Y sur le second revient à
+   * l'inverse. On n'explore donc qu'un seul ordre, en n'autorisant le second
+   * qu'à partir du choix du premier. Sur une pièce à cinq emplacements
+   * jumeaux, cela retire un facteur 120 au parcours — ce qui fait la
+   * différence entre une recherche exacte et une recherche tronquée.
+   */
+  const twinOfPrev = perSocket.map((list, i) => {
+    if (i === 0) return false;
+    const prev = perSocket[i - 1];
+    if (prev.length !== list.length) return false;
+    return list.every(
+      (c, k) => c.hash === prev[k].hash && c.energyCost === prev[k].energyCost
+    );
+  });
+
+  const dfs = (i: number, cost: number, minIndex: number) => {
+    if (nodes++ > MAX_NODES) return;
+    const u = utility(totals, shares);
+    if (found && u + remainingBound(i, totals) < bestScore) return;
     if (i === perSocket.length) {
-      // À score égal, la combinaison la moins gourmande en énergie gagne.
-      if (!found || score > bestScore || (score === bestScore && cost < bestCost)) {
-        bestScore = score;
+      // À utilité égale, la combinaison la moins gourmande en énergie gagne.
+      if (
+        !found ||
+        u > bestScore + EPS ||
+        (Math.abs(u - bestScore) <= EPS && cost < bestCost)
+      ) {
+        bestScore = u;
         bestCost = cost;
         bestPick = [...pick];
         found = true;
       }
       return;
     }
-    for (const c of perSocket[i]) {
+    const list = perSocket[i];
+    for (let k = twinOfPrev[i] ? minIndex : 0; k < list.length; k++) {
+      const c = list[k];
       if (cost + c.energyCost > budget) continue;
       if (c.unique && used.has(c.hash)) continue;
       if (c.unique) used.add(c.hash);
+      for (let j = 0; j < totals.length; j++) totals[j] += c.gains[j];
       pick[i] = c;
-      dfs(i + 1, score + c.score, cost + c.energyCost);
+      dfs(i + 1, cost + c.energyCost, k);
+      for (let j = 0; j < totals.length; j++) totals[j] -= c.gains[j];
       if (c.unique) used.delete(c.hash);
     }
   };
@@ -524,7 +702,6 @@ export function bestModCombo(opts: {
   if (!found) {
     // Aucune combinaison légale (budget saturé) : on garde tout tel quel.
     bestPick = perSocket.map((list) => list.find((c) => c.keep) ?? list[0]);
-    bestScore = bestPick.reduce((a, c) => a + (c?.score ?? 0), 0);
     bestCost = bestPick.reduce((a, c) => a + (c?.energyCost ?? 0), 0);
   }
 
@@ -536,7 +713,12 @@ export function bestModCombo(opts: {
    */
   if (fillEmpty) {
     const takenHashes = new Set<number>();
-    for (const c of bestPick) if (c?.unique) takenHashes.add(c.hash);
+    const running = [...acquired];
+    for (const c of bestPick) {
+      if (!c) continue;
+      if (c.unique) takenHashes.add(c.hash);
+      for (let j = 0; j < running.length; j++) running[j] += c.gains[j];
+    }
     let cost = bestCost;
 
     for (let i = 0; i < sockets.length; i++) {
@@ -544,30 +726,45 @@ export function bestModCombo(opts: {
       const chosen = bestPick[i];
       if (!chosen?.keep || !socket.isEmpty) continue;
 
+      const base = utility(running, shares);
       let best: PlugOption | null = null;
-      let bestFill = 0;
+      let bestGains: number[] | null = null;
+      let bestMargin = 0;
+      let bestRaw = 0;
+
       for (const o of socket.options) {
         if (!o.canInsert || takenHashes.has(o.hash)) continue;
         if (cost - chosen.energyCost + o.energyCost > budget) continue;
-        // À défaut de servir les stats visées, on privilégie le mod qui
-        // apporte le plus de points de stats, tous domaines confondus.
-        const value = o.effects.reduce((a, e) => a + Math.max(0, e.value), 0);
-        if (value > bestFill) {
+        const gains = gainsOf(o.effects, statHashes);
+        for (let j = 0; j < running.length; j++) running[j] += gains[j];
+        const margin = utility(running, shares) - base;
+        for (let j = 0; j < running.length; j++) running[j] -= gains[j];
+        // À défaut de servir les priorités, on privilégie le mod qui apporte
+        // le plus de points de stats, tous domaines confondus.
+        const raw = o.effects.reduce((a, e) => a + Math.max(0, e.value), 0);
+        if (
+          margin > bestMargin + EPS ||
+          (Math.abs(margin - bestMargin) <= EPS && raw > bestRaw)
+        ) {
           best = o;
-          bestFill = value;
+          bestGains = gains;
+          bestMargin = margin;
+          bestRaw = raw;
         }
       }
-      if (!best) continue;
+      if (!best || !bestGains) continue;
 
       cost = cost - chosen.energyCost + best.energyCost;
       takenHashes.add(best.hash);
+      for (let j = 0; j < running.length; j++) running[j] += bestGains[j];
       bestPick[i] = {
         hash: best.hash,
         name: best.name,
         icon: best.icon,
         energyCost: best.energyCost,
         effects: best.effects,
-        score: scoreOf(best.effects, weights),
+        gains: bestGains,
+        bound: boundOf(bestGains),
         keep: false,
         unique: true,
       };
@@ -576,9 +773,10 @@ export function bestModCombo(opts: {
   }
 
   const choices: ComboChoice[] = [];
-  const totals = new Map<number, number>();
+  const totalsByStat = new Map<number, number>();
   const deltas = new Map<number, number>();
-  let scoreGain = 0;
+  const finalGains = [...acquired];
+  const currentGains = [...acquired];
 
   for (let i = 0; i < sockets.length; i++) {
     const socket = sockets[i];
@@ -598,22 +796,31 @@ export function bestModCombo(opts: {
     });
 
     for (const e of c.effects) {
-      totals.set(e.statHash, (totals.get(e.statHash) ?? 0) + e.value);
+      totalsByStat.set(
+        e.statHash,
+        (totalsByStat.get(e.statHash) ?? 0) + e.value
+      );
       deltas.set(e.statHash, (deltas.get(e.statHash) ?? 0) + e.value);
     }
     for (const e of socket.currentEffects) {
       deltas.set(e.statHash, (deltas.get(e.statHash) ?? 0) - e.value);
     }
-    scoreGain += c.score - scoreOf(socket.currentEffects, weights);
+    const before = gainsOf(socket.currentEffects, statHashes);
+    for (let j = 0; j < statHashes.length; j++) {
+      finalGains[j] += c.gains[j];
+      currentGains[j] += before[j];
+    }
   }
+
+  const score = utility(finalGains, shares);
 
   return {
     choices,
     changes: choices.filter((c) => c.isChange && c.plugHash !== 0),
-    totals,
+    totals: totalsByStat,
     deltas,
-    score: bestScore,
-    scoreGain,
+    score,
+    scoreGain: score - utility(currentGains, shares),
     energyUsed: bestCost + reservedEnergy,
     energyCapacity,
   };
