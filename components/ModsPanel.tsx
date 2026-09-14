@@ -412,26 +412,43 @@ export default function ModsPanel() {
               : ", appliquée arme par arme."}
           </p>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {/*
+            Chaque stat tient dans son propre cadre : sans lui, le nom reste
+            collé au bord gauche et son réglage part à l'autre bout de la
+            colonne, si bien qu'on lit le pourcentage d'une stat en face du nom
+            de la voisine.
+          */}
+          <div className="grid gap-x-3 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {relevantStats.map((h) => {
               const w = weights[h] ?? 0;
               const share = shares.get(h) ?? 0;
               return (
-                <div key={h} className="flex items-center gap-2">
-                  <span className="text-xs flex-1 truncate opacity-80">
+                <div
+                  key={h}
+                  className={`flex items-center gap-2 rounded-md border px-2 py-1 ${
+                    w > 0
+                      ? "bg-base-300/60 border-base-content/10"
+                      : "bg-base-300/25 border-transparent"
+                  }`}
+                >
+                  <span
+                    className={`text-xs flex-1 truncate ${
+                      w > 0 ? "opacity-90" : "opacity-45"
+                    }`}
+                  >
                     {statName(h)}
                   </span>
                   <span
-                    className={`text-xs font-mono w-10 text-right ${
+                    className={`text-xs font-mono tabular-nums shrink-0 ${
                       w > 0 ? "opacity-70" : "opacity-30"
                     }`}
                     title="Part de la priorité totale"
                   >
                     {w > 0 ? `${Math.round(share * 100)} %` : "—"}
                   </span>
-                  <div className="join">
+                  <div className="join shrink-0">
                     <button
-                      className="btn btn-xs join-item btn-ghost"
+                      className="btn btn-xs join-item btn-ghost px-1.5"
                       disabled={w === 0}
                       aria-label={`Baisser ${statName(h)}`}
                       onClick={() => setWeights({ ...weights, [h]: w - 1 })}
@@ -439,7 +456,7 @@ export default function ModsPanel() {
                       −
                     </button>
                     <button
-                      className={`btn btn-xs join-item w-11${
+                      className={`btn btn-xs join-item w-10 px-0${
                         w > 0 ? " btn-primary" : " btn-ghost"
                       }`}
                       title={
@@ -452,7 +469,7 @@ export default function ModsPanel() {
                       {w > 0 ? `×${w}` : "Ign"}
                     </button>
                     <button
-                      className="btn btn-xs join-item btn-ghost"
+                      className="btn btn-xs join-item btn-ghost px-1.5"
                       disabled={w >= MAX_WEIGHT}
                       aria-label={`Monter ${statName(h)}`}
                       onClick={() => setWeights({ ...weights, [h]: w + 1 })}
