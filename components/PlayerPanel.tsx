@@ -1,7 +1,7 @@
 /*
  * Pas de directive "use client" : ce composant n'est rendu que depuis
  * app/clan/page.tsx, qui la porte déjà. La poser ici en ferait une frontière
- * serveur/client, où une prop fonction (onRelease) serait à tort refusée.
+ * serveur/client, où une prop fonction (onClose) serait à tort refusée.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -38,10 +38,9 @@ import type { Defs } from "@/lib/types";
  * déjà, pour qu'un coup d'œil suffise. Chaque pièce est inspectable, si bien
  * que la fiche d'objet complète reste à un survol.
  *
- * Le panneau se charge lui-même, avec le cache de `player-client` : survoler
- * dix lignes d'un tableau ne déclenche pas dix lectures du même profil.
- * `full` distingue l'aperçu (survol) de la consultation (clic) : le profil
- * léger arrive vite, le complet ajoute les stats et mods de chaque objet.
+ * Le panneau se charge lui-même, avec le cache de `player-client` : revenir
+ * sur un Gardien déjà consulté ne relit rien. Le profil demandé est le
+ * complet, celui qui porte les stats et les mods de chaque objet.
  */
 
 export interface PlayerTarget {
@@ -210,17 +209,12 @@ export default function PlayerPanel({
   target,
   defs,
   defsStatus,
-  full,
-  pinned = false,
-  onRelease,
+  onClose,
 }: {
   target: PlayerTarget;
   defs: Defs | null;
   defsStatus: string;
-  /** true après un clic : on lit alors le profil complet */
-  full: boolean;
-  pinned?: boolean;
-  onRelease?: () => void;
+  onClose?: () => void;
 }) {
   const [data, setData] = useState<PlayerData | null>(() =>
     cachedPlayer(target.membershipType, target.membershipId)
@@ -243,7 +237,7 @@ export default function PlayerPanel({
     setCharId("");
     setLoading(!cached);
 
-    fetchPlayer(target.membershipType, target.membershipId, !full)
+    fetchPlayer(target.membershipType, target.membershipId, false)
       .then((d) => {
         if (!cancelled) setData(d);
       })
@@ -259,7 +253,7 @@ export default function PlayerPanel({
     return () => {
       cancelled = true;
     };
-  }, [target.membershipType, target.membershipId, full]);
+  }, [target.membershipType, target.membershipId]);
 
   const summary = useMemo(
     () => (defs && data ? summarizePlayer(defs, data) : null),
@@ -318,9 +312,9 @@ export default function PlayerPanel({
           >
             {target.isOnline ? "en ligne" : target.lastSeen}
           </span>
-          {pinned && onRelease && (
-            <button className="btn btn-ghost btn-xs" onClick={onRelease}>
-              détacher
+          {onClose && (
+            <button className="btn btn-ghost btn-xs" onClick={onClose}>
+              fermer
             </button>
           )}
         </div>
@@ -478,12 +472,6 @@ export default function PlayerPanel({
             ))}
           </div>
         </div>
-      )}
-
-      {!pinned && (
-        <p className="text-[11px] opacity-40">
-          Clique un Gardien pour garder sa fiche affichée.
-        </p>
       )}
     </div>
   );

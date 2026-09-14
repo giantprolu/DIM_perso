@@ -4,7 +4,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -63,9 +62,6 @@ const MEMBER_TYPES: Record<number, string> = {
 };
 
 const BUNGIE_ROOT = "https://www.bungie.net";
-
-/** Délai avant d'interroger Bungie : traverser une ligne ne doit rien déclencher. */
-const HOVER_DELAY_MS = 180;
 
 function lastSeen(iso?: string, online?: boolean): string {
   if (online) return "en ligne";
@@ -140,13 +136,11 @@ export default function ClanPage() {
   const [defsStatus, setDefsStatus] = useState("Chargement des définitions…");
 
   /*
-   * Deux façons de remplir le panneau de droite : le survol, qui suit la
-   * souris, et le clic, qui épingle. L'épinglé gagne — sinon consulter une
-   * fiche deviendrait impossible dès que la souris repasse sur le tableau.
+   * Le panneau de droite ne suit que le clic. Le faire suivre le survol
+   * relançait une lecture de profil à chaque ligne traversée, et la fiche
+   * changeait sous la souris avant même d'être lisible.
    */
-  const [hovered, setHovered] = useState<PlayerTarget | null>(null);
   const [picked, setPicked] = useState<PlayerTarget | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlayerSearchResult[] | null>(
@@ -250,36 +244,9 @@ export default function ClanPage() {
     };
   }, []);
 
-  const clearHover = useCallback(() => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = null;
-    setHovered(null);
-  }, []);
-
-  /*
-   * Le survol n'est pris en compte qu'après un court délai : traverser le
-   * tableau à la souris ne doit pas enchaîner les lectures de profil.
-   */
-  const startHover = useCallback((m: ClanMember) => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    const target = targetOf(m);
-    if (!target) return;
-    hoverTimer.current = setTimeout(
-      () => setHovered(target),
-      HOVER_DELAY_MS
-    );
-  }, []);
-
   const openMember = useCallback((m: ClanMember) => {
     const target = targetOf(m);
-    if (!target) return;
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    setHovered(null);
-    setPicked(target);
-  }, []);
-
-  useEffect(() => () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (target) setPicked(target);
   }, []);
 
   const sorted = useMemo(() => {
@@ -292,9 +259,6 @@ export default function ClanPage() {
   }, [members, onlyOnline]);
 
   const onlineCount = members.filter((m) => m.isOnline).length;
-
-  /** Ce que montre la fiche de droite : l'épinglé, sinon le survolé. */
-  const active = picked ?? hovered;
 
   if (phase === "loading") {
     return (
@@ -493,10 +457,6 @@ export default function ClanPage() {
                           tabIndex={account ? 0 : undefined}
                           role={account ? "button" : undefined}
                           aria-label={account ? `Fiche de ${name}` : undefined}
-                          onMouseEnter={() => startHover(m)}
-                          onMouseLeave={clearHover}
-                          onFocus={() => startHover(m)}
-                          onBlur={clearHover}
                           onClick={() => openMember(m)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -553,28 +513,26 @@ export default function ClanPage() {
           </div>
 
           <p className="text-xs opacity-50">
-            Survole un Gardien pour voir sa fiche à droite, clique pour l&apos;y
-            garder. Ce que Bungie accepte de montrer dépend des réglages de
-            confidentialité de chacun : un profil privé est signalé comme tel.
+            Clique un Gardien pour voir sa fiche à droite. Ce que Bungie
+            accepte de montrer dépend des réglages de confidentialité de
+            chacun : un profil privé est signalé comme tel.
           </p>
         </div>
 
         {/* La fiche suit le défilement de la liste, sur grand écran. */}
         <div className="card bg-base-200 shadow lg:sticky lg:top-20">
           <div className="card-body p-4">
-            {active ? (
+            {picked ? (
               <PlayerPanel
-                key={`${active.membershipType}/${active.membershipId}`}
-                target={active}
+                key={`${picked.membershipType}/${picked.membershipId}`}
+                target={picked}
                 defs={defs}
                 defsStatus={defsStatus}
-                full={picked !== null}
-                pinned={picked !== null}
-                onRelease={() => setPicked(null)}
+                onClose={() => setPicked(null)}
               />
             ) : (
               <div className="py-16 text-center text-sm opacity-50">
-                Survole un Gardien de la liste pour voir ses personnages, sa
+                Clique un Gardien de la liste pour voir ses personnages, sa
                 puissance, ses statistiques et son équipement porté.
               </div>
             )}
