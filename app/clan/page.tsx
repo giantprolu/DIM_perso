@@ -9,12 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import { loadDefs } from "@/lib/manifest-client";
-import { fetchPlayer, cachedPlayer, type PlayerData } from "@/lib/player-client";
-import PlayerHoverCard, {
-  type HoverAnchor,
-  type HoverMember,
-} from "@/components/PlayerHoverCard";
-import PlayerModal, { type ModalTarget } from "@/components/PlayerModal";
+import PlayerPanel, { type PlayerTarget } from "@/components/PlayerPanel";
 import type { Defs, PlayerSearchResult } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "none" | "error";
@@ -116,14 +111,18 @@ function memberName(m: ClanMember): string {
   );
 }
 
-function hoverMemberOf(m: ClanMember): HoverMember {
+/** Le membre, sous la forme que la fiche de droite attend. */
+function targetOf(m: ClanMember): PlayerTarget | null {
+  const account = destinyAccount(m);
+  if (!account) return null;
   const info = m.destinyUserInfo;
   return {
+    membershipType: account.type,
+    membershipId: account.id,
     name: memberName(m),
     code: info?.bungieGlobalDisplayNameCode,
     icon: info?.iconPath ?? m.bungieNetUserInfo?.iconPath,
     isOnline: m.isOnline,
-    membershipType: destinyAccount(m)?.type,
     role: MEMBER_TYPES[m.memberType ?? 1] ?? "Membre",
     joinDate: m.joinDate,
     lastSeen: lastSeen(m.lastOnlineStatusChange, m.isOnline),
@@ -140,18 +139,14 @@ export default function ClanPage() {
   const [defs, setDefs] = useState<Defs | null>(null);
   const [defsStatus, setDefsStatus] = useState("Chargement des définitions…");
 
-  const [hover, setHover] = useState<{
-    member: ClanMember;
-    anchor: HoverAnchor;
-  } | null>(null);
-  const [hoverData, setHoverData] = useState<PlayerData | null>(null);
-  const [hoverLoading, setHoverLoading] = useState(false);
-  const [hoverError, setHoverError] = useState("");
+  /*
+   * Deux façons de remplir le panneau de droite : le survol, qui suit la
+   * souris, et le clic, qui épingle. L'épinglé gagne — sinon consulter une
+   * fiche deviendrait impossible dès que la souris repasse sur le tableau.
+   */
+  const [hovered, setHovered] = useState<PlayerTarget | null>(null);
+  const [picked, setPicked] = useState<PlayerTarget | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Identifie le survol en cours : les réponses tardives d'un autre membre sont ignorées. */
-  const hoverKey = useRef("");
-
-  const [modalTarget, setModalTarget] = useState<ModalTarget | null>(null);
 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlayerSearchResult[] | null>(
@@ -186,9 +181,9 @@ export default function ClanPage() {
     }
   }
 
-  /** Un joueur trouvé s'ouvre dans la même fiche qu'un membre du clan. */
+  /** Un joueur trouvé s'affiche dans la même fiche qu'un membre du clan. */
   function openFoundPlayer(player: PlayerSearchResult) {
-    setModalTarget({
+    setPicked({
       membershipType: player.membershipType,
       membershipId: player.membershipId,
       name: player.name,
@@ -258,86 +253,30 @@ export default function ClanPage() {
   const clearHover = useCallback(() => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = null;
-    hoverKey.current = "";
-    setHover(null);
-    setHoverData(null);
-    setHoverError("");
-    setHoverLoading(false);
+    setHovered(null);
   }, []);
 
-  const startHover = useCallback(
-    (m: ClanMember, element: HTMLElement) => {
-      // Le survol précédent ne doit pas déclencher sa requête après coup.
-      if (hoverTimer.current) clearTimeout(hoverTimer.current);
-      hoverTimer.current = null;
+  /*
+   * Le survol n'est pris en compte qu'après un court délai : traverser le
+   * tableau à la souris ne doit pas enchaîner les lectures de profil.
+   */
+  const startHover = useCallback((m: ClanMember) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    const target = targetOf(m);
+    if (!target) return;
+    hoverTimer.current = setTimeout(
+      () => setHovered(target),
+      HOVER_DELAY_MS
+    );
+  }, []);
 
-      const account = destinyAccount(m);
-      const rect = element.getBoundingClientRect();
-      setHover({
-        member: m,
-        anchor: { top: rect.top, bottom: rect.bottom, left: rect.left },
-      });
-      setHoverError("");
-
-      if (!account) {
-        setHoverData(null);
-        setHoverLoading(false);
-        return;
-      }
-
-      const key = `${account.type}/${account.id}`;
-      hoverKey.current = key;
-
-      // Déjà lu récemment : affichage immédiat, aucune requête.
-      const cachedData = cachedPlayer(account.type, account.id);
-      if (cachedData) {
-        setHoverData(cachedData);
-        setHoverLoading(false);
-        return;
-      }
-
-      setHoverData(null);
-      setHoverLoading(true);
-      hoverTimer.current = setTimeout(() => {
-        fetchPlayer(account.type, account.id, true)
-          .then((d) => {
-            if (hoverKey.current === key) setHoverData(d);
-          })
-          .catch((e: unknown) => {
-            if (hoverKey.current === key) {
-              setHoverError(
-                e instanceof Error ? e.message : "Profil illisible"
-              );
-            }
-          })
-          .finally(() => {
-            if (hoverKey.current === key) setHoverLoading(false);
-          });
-      }, HOVER_DELAY_MS);
-    },
-    []
-  );
-
-  const openMember = useCallback(
-    (m: ClanMember) => {
-      const account = destinyAccount(m);
-      if (!account) return;
-      clearHover();
-      const info = m.destinyUserInfo;
-      setModalTarget({
-        membershipType: account.type,
-        membershipId: account.id,
-        name: memberName(m),
-        code: info?.bungieGlobalDisplayNameCode,
-        icon: info?.iconPath ?? m.bungieNetUserInfo?.iconPath,
-        isOnline: m.isOnline,
-        role: MEMBER_TYPES[m.memberType ?? 1] ?? "Membre",
-        joinDate: m.joinDate,
-        lastSeen: lastSeen(m.lastOnlineStatusChange, m.isOnline),
-      });
-    },
-    [clearHover]
-  );
+  const openMember = useCallback((m: ClanMember) => {
+    const target = targetOf(m);
+    if (!target) return;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setHovered(null);
+    setPicked(target);
+  }, []);
 
   useEffect(() => () => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
@@ -353,6 +292,9 @@ export default function ClanPage() {
   }, [members, onlyOnline]);
 
   const onlineCount = members.filter((m) => m.isOnline).length;
+
+  /** Ce que montre la fiche de droite : l'épinglé, sinon le survolé. */
+  const active = picked ?? hovered;
 
   if (phase === "loading") {
     return (
@@ -497,123 +439,148 @@ export default function ClanPage() {
         </div>
       </div>
 
-      <label className="label cursor-pointer justify-start gap-3 py-0">
-        <input
-          type="checkbox"
-          className="toggle toggle-primary toggle-sm"
-          checked={onlyOnline}
-          onChange={(e) => setOnlyOnline(e.target.checked)}
-        />
-        <span className="label-text text-sm">Seulement les membres en ligne</span>
-      </label>
+      {/*
+      {/*
+        La liste tient à gauche, volontairement étroite : elle ne sert qu'à
+        choisir. La fiche occupe la droite, où la place permet de montrer
+        l'écran personnage en grand plutôt qu'en vignette flottante.
+      */}
+      <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-3">
+          <label className="label cursor-pointer justify-start gap-3 py-0">
+            <input
+              type="checkbox"
+              className="toggle toggle-primary toggle-sm"
+              checked={onlyOnline}
+              onChange={(e) => setOnlyOnline(e.target.checked)}
+            />
+            <span className="label-text text-sm">
+              Seulement les membres en ligne
+            </span>
+          </label>
 
-      <div className="card bg-base-200 shadow">
-        <div className="card-body p-2">
-          <div className="overflow-x-auto">
-            <table className="table table-zebra table-sm">
-              <thead>
-                <tr>
-                  <th>Gardien</th>
-                  <th>Rôle</th>
-                  <th className="text-right">Dernière connexion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((m) => {
-                  const info = m.destinyUserInfo;
-                  const name = memberName(m);
-                  const code = info?.bungieGlobalDisplayNameCode;
-                  const icon = info?.iconPath ?? m.bungieNetUserInfo?.iconPath;
-                  const account = destinyAccount(m);
-                  return (
-                    <tr
-                      key={info?.membershipId ?? name}
-                      className={
-                        account
-                          ? "cursor-pointer hover:bg-base-300/60 focus:bg-base-300/60 outline-none"
-                          : undefined
-                      }
-                      tabIndex={account ? 0 : undefined}
-                      role={account ? "button" : undefined}
-                      aria-label={account ? `Fiche de ${name}` : undefined}
-                      onMouseEnter={(e) => startHover(m, e.currentTarget)}
-                      onMouseLeave={clearHover}
-                      onFocus={(e) => startHover(m, e.currentTarget)}
-                      onBlur={clearHover}
-                      onClick={() => openMember(m)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          openMember(m);
-                        }
-                      }}
-                    >
-                      <td>
-                        <div className="flex items-center gap-2">
-                          {icon && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={`${BUNGIE_ROOT}${icon}`}
-                              alt=""
-                              className="w-7 h-7 rounded"
-                            />
-                          )}
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              m.isOnline ? "bg-success" : "bg-base-content/25"
-                            }`}
-                          />
-                          <span className="font-medium">
-                            {name}
-                            {code !== undefined && (
-                              <span className="opacity-40 font-mono text-xs">
-                                #{String(code).padStart(4, "0")}
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="text-xs opacity-60">
-                        {MEMBER_TYPES[m.memberType ?? 1] ?? "Membre"}
-                      </td>
-                      <td className="text-right text-xs opacity-60">
-                        {lastSeen(m.lastOnlineStatusChange, m.isOnline)}
-                      </td>
+          <div className="card bg-base-200 shadow">
+            <div className="card-body p-2">
+              {/* La liste défile seule : la fiche de droite reste en vue. */}
+              <div className="max-h-[calc(100vh-13rem)] overflow-y-auto">
+                <table className="table table-zebra table-sm">
+                  <thead>
+                    <tr>
+                      <th>Gardien</th>
+                      <th className="text-right">Vu</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {sorted.map((m) => {
+                      const info = m.destinyUserInfo;
+                      const name = memberName(m);
+                      const code = info?.bungieGlobalDisplayNameCode;
+                      const icon =
+                        info?.iconPath ?? m.bungieNetUserInfo?.iconPath;
+                      const account = destinyAccount(m);
+                      const isPicked =
+                        account !== null && picked?.membershipId === account.id;
+                      return (
+                        <tr
+                          key={info?.membershipId ?? name}
+                          className={
+                            account
+                              ? `cursor-pointer outline-none hover:bg-base-300/60 focus:bg-base-300/60${
+                                  isPicked ? " !bg-primary/15" : ""
+                                }`
+                              : undefined
+                          }
+                          tabIndex={account ? 0 : undefined}
+                          role={account ? "button" : undefined}
+                          aria-label={account ? `Fiche de ${name}` : undefined}
+                          onMouseEnter={() => startHover(m)}
+                          onMouseLeave={clearHover}
+                          onFocus={() => startHover(m)}
+                          onBlur={clearHover}
+                          onClick={() => openMember(m)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openMember(m);
+                            }
+                          }}
+                        >
+                          <td>
+                            <div className="flex items-center gap-2">
+                              {icon && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={`${BUNGIE_ROOT}${icon}`}
+                                  alt=""
+                                  className="w-7 h-7 rounded shrink-0"
+                                />
+                              )}
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  m.isOnline
+                                    ? "bg-success"
+                                    : "bg-base-content/25"
+                                }`}
+                              />
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium">
+                                  {name}
+                                  {code !== undefined && (
+                                    <span className="opacity-40 font-mono text-xs">
+                                      #{String(code).padStart(4, "0")}
+                                    </span>
+                                  )}
+                                </span>
+                                {/* Le rôle passe sous le nom : la colonne
+                                    séparée ne tiendrait pas dans cette
+                                    largeur. */}
+                                <span className="block text-[11px] opacity-50">
+                                  {MEMBER_TYPES[m.memberType ?? 1] ?? "Membre"}
+                                </span>
+                              </span>
+                            </div>
+                          </td>
+                          <td className="text-right text-xs opacity-60 align-middle">
+                            {lastSeen(m.lastOnlineStatusChange, m.isOnline)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs opacity-50">
+            Survole un Gardien pour voir sa fiche à droite, clique pour l&apos;y
+            garder. Ce que Bungie accepte de montrer dépend des réglages de
+            confidentialité de chacun : un profil privé est signalé comme tel.
+          </p>
+        </div>
+
+        {/* La fiche suit le défilement de la liste, sur grand écran. */}
+        <div className="card bg-base-200 shadow lg:sticky lg:top-20">
+          <div className="card-body p-4">
+            {active ? (
+              <PlayerPanel
+                key={`${active.membershipType}/${active.membershipId}`}
+                target={active}
+                defs={defs}
+                defsStatus={defsStatus}
+                full={picked !== null}
+                pinned={picked !== null}
+                onRelease={() => setPicked(null)}
+              />
+            ) : (
+              <div className="py-16 text-center text-sm opacity-50">
+                Survole un Gardien de la liste pour voir ses personnages, sa
+                puissance, ses statistiques et son équipement porté.
+              </div>
+            )}
           </div>
         </div>
       </div>
-
-      <p className="text-xs opacity-50">
-        Survole un gardien pour un aperçu, clique pour sa fiche complète —
-        personnages, puissance, statistiques, activité en cours et équipement
-        porté. Ce que Bungie accepte de montrer dépend des réglages de
-        confidentialité de chacun : un profil privé est signalé comme tel.
-      </p>
-
-      {hover && (
-        <PlayerHoverCard
-          member={hoverMemberOf(hover.member)}
-          data={hoverData}
-          defs={defs}
-          loading={hoverLoading}
-          error={hoverError}
-          anchor={hover.anchor}
-        />
-      )}
-
-      {modalTarget && (
-        <PlayerModal
-          target={modalTarget}
-          defs={defs}
-          defsStatus={defsStatus}
-          onClose={() => setModalTarget(null)}
-        />
-      )}
     </div>
   );
 }
