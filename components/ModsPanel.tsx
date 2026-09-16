@@ -339,7 +339,7 @@ export default function ModsPanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -361,7 +361,7 @@ export default function ModsPanel() {
         ))}
       </div>
 
-      <div role="tablist" className="tabs tabs-boxed w-fit">
+      <div role="tablist" className="tabs tabs-boxed w-fit tabs-scroll">
         <a
           role="tab"
           className={`tab${tab === "weapons" ? " tab-active" : ""}`}
@@ -379,8 +379,8 @@ export default function ModsPanel() {
       </div>
 
       <div className="card bg-base-200 shadow">
-        <div className="card-body p-4 gap-3">
-          <div className="flex items-center gap-3 flex-wrap">
+        <div className="card-body p-3 sm:p-4 gap-3">
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
             <span className="text-sm font-medium">
               Coefficient de chaque {tab === "weapons" ? "stat d'arme" : "stat d'armure"}
             </span>
@@ -499,7 +499,7 @@ export default function ModsPanel() {
               ))
             )}
             <button
-              className="btn btn-primary btn-sm ml-auto"
+              className="btn btn-primary btn-sm w-full sm:w-auto sm:ml-auto"
               disabled={busy || totalChanges === 0}
               onClick={() => applyPlans(plans)}
             >
@@ -528,10 +528,22 @@ export default function ModsPanel() {
           const deltas = [...plan.combo.deltas.entries()].filter(
             ([, v]) => v !== 0
           );
+          /*
+           * Ce que la pièce a réellement à offrir. Quand rien ne bouge, cela
+           * distingue « déjà au mieux » de « aucun mod de stat lu » — deux
+           * situations qu'un simple « déjà optimal » confondait.
+           */
+          const options = plan.context.sockets.flatMap((s) => s.options);
+          const unlocked = options.filter((o) => o.canInsert);
+          const useful = unlocked.filter((o) =>
+            o.effects.some((e) => e.value > 0 && (weights[e.statHash] ?? 0) > 0)
+          );
+          const nothingUseful =
+            plan.context.sockets.length > 0 && useful.length === 0;
           return (
             <div className="card bg-base-200 shadow" key={plan.item.instanceId}>
-              <div className="card-body p-4 gap-3">
-                <div className="flex items-center gap-3 flex-wrap">
+              <div className="card-body p-3 sm:p-4 gap-3">
+                <div className="flex items-center gap-x-3 gap-y-2 flex-wrap">
                   {plan.item.icon && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -548,7 +560,7 @@ export default function ModsPanel() {
                       alt=""
                     />
                   )}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1 sm:flex-none">
                     <div className="font-medium">{plan.item.name}</div>
                     <div className="text-xs opacity-50">
                       {tab === "weapons"
@@ -558,10 +570,21 @@ export default function ModsPanel() {
                   </div>
                   <div className="flex gap-1 flex-wrap">
                     {deltas.length === 0 ? (
-                      <span className="badge badge-sm badge-ghost">
+                      <span
+                        className={`badge badge-sm ${
+                          nothingUseful ? "badge-warning" : "badge-ghost"
+                        }`}
+                        title={
+                          nothingUseful
+                            ? `${options.length} mod(s) lu(s), ${unlocked.length} débloqué(s), aucun ne donne de points aux stats visées`
+                            : undefined
+                        }
+                      >
                         {plan.context.sockets.length === 0
                           ? "aucun mod modifiable"
-                          : "déjà optimal"}
+                          : nothingUseful
+                            ? `aucun mod de stat posable (${unlocked.length}/${options.length} débloqués)`
+                            : "déjà optimal"}
                       </span>
                     ) : (
                       deltas.map(([h, v]) => (
@@ -591,7 +614,7 @@ export default function ModsPanel() {
                     {plan.combo.choices.map((c) => (
                       <div
                         key={c.socketIndex}
-                        className={`flex items-center gap-2 rounded-box px-2 py-1.5 ${
+                        className={`flex items-center gap-2 rounded-box px-2 py-1.5 min-w-0 max-sm:w-full ${
                           c.isChange
                             ? "bg-base-300 ring-1 ring-primary/40"
                             : "bg-base-300/50 opacity-60"
@@ -605,7 +628,7 @@ export default function ModsPanel() {
                             className="w-8 h-8 rounded"
                           />
                         )}
-                        <div className="text-xs">
+                        <div className="text-xs min-w-0">
                           <div className="font-medium">{c.name}</div>
                           <div className="opacity-50">
                             {c.effects.length > 0

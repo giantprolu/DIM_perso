@@ -130,11 +130,21 @@ function plugEffects(
 /**
  * Plugs réellement disponibles pour un emplacement.
  *
- * Trois sources, par ordre de fiabilité :
- *  1. le composant 310, propre à l'instance (surtout les armes) ;
- *  2. les plug sets du personnage puis du compte — c'est là que vivent les
- *     mods d'ARMURE, débloqués une fois pour toutes et donc absents du 310 ;
+ * Trois sources :
+ *  1. le composant 310, propre à l'instance ;
+ *  2. les plug sets du compte ET du personnage — c'est là que vivent les mods
+ *     d'ARMURE, débloqués une fois pour toutes ;
  *  3. à défaut, le manifest (qui ignore ce que tu as débloqué).
+ *
+ * ARMES : le 310 fait foi dès qu'il répond. Il sait qu'un mod adepte ne va
+ * pas sur une arme normale, ce que le plug set du compte ignore.
+ *
+ * ARMURE : les sources s'ADDITIONNENT. Les prendre l'une OU l'autre laissait
+ * la pièce sans ses mods de stats dès que le 310 renvoyait quelques plugs
+ * pour l'emplacement, ou que le personnage avait son propre plug set — qui ne
+ * porte que ses mods à lui et masquait alors ceux du compte. Et sur un plug
+ * set, seul `enabled` dit qu'un mod est débloqué : `canInsert` y reste souvent
+ * faux sans que Bungie refuse la pose (DIM ne le lit pas non plus).
  */
 function availablePlugs(
   defs: Defs,
@@ -142,34 +152,51 @@ function availablePlugs(
   instanceId: string,
   itemHash: number,
   socketIndex: number,
+  isWeapon: boolean,
   characterId?: string
 ): { hash: number; canInsert: boolean }[] {
   const fromInstance =
     data.itemComponents?.reusablePlugs?.data?.[instanceId]?.plugs?.[
       String(socketIndex)
-    ];
-  if (fromInstance && fromInstance.length > 0) {
+    ] ?? [];
+  if (isWeapon && fromInstance.length > 0) {
     return fromInstance.map((p) => ({
       hash: p.plugItemHash,
       canInsert: p.canInsert !== false && p.enabled !== false,
     }));
   }
 
+  // Un même mod peut venir de plusieurs sources : une seule qui l'autorise suffit.
+  const merged = new Map<number, boolean>();
+  const add = (hash: number, ok: boolean) =>
+    merged.set(hash, (merged.get(hash) ?? false) || ok);
+
+  for (const p of fromInstance) {
+    add(p.plugItemHash, p.canInsert !== false && p.enabled !== false);
+  }
+
   const entry = defs.items[itemHash]?.sockets?.socketEntries?.[socketIndex];
   const setHash = entry?.reusablePlugSetHash ?? entry?.randomizedPlugSetHash;
-  if (!setHash) return [];
+  if (setHash) {
+    const fromProfile =
+      data.profilePlugSets?.data?.plugs?.[String(setHash)] ?? [];
+    const fromCharacter = characterId
+      ? (data.characterPlugSets?.data?.[characterId]?.plugs?.[
+          String(setHash)
+        ] ?? [])
+      : [];
+    for (const p of [...fromProfile, ...fromCharacter]) {
+      add(p.plugItemHash, p.enabled !== false);
+    }
+  }
 
-  const fromCharacter = characterId
-    ? data.characterPlugSets?.data?.[characterId]?.plugs?.[String(setHash)]
-    : undefined;
-  const fromProfile = data.profilePlugSets?.data?.plugs?.[String(setHash)];
-  const unlocked = fromCharacter ?? fromProfile;
-  if (unlocked && unlocked.length > 0) {
-    return unlocked.map((p) => ({
-      hash: p.plugItemHash,
-      canInsert: p.canInsert !== false && p.enabled !== false,
+  if (merged.size > 0) {
+    return [...merged.entries()].map(([hash, canInsert]) => ({
+      hash,
+      canInsert,
     }));
   }
+  if (!setHash) return [];
 
   // Dernier recours : le catalogue du manifest
   return (defs.plugSets?.[setHash]?.reusablePlugItems ?? []).map((i) => ({
@@ -195,6 +222,7 @@ function optionsFor(
     instanceId,
     itemHash,
     socketIndex,
+    isWeapon,
     characterId
   );
 
