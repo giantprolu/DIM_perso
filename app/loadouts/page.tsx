@@ -6,6 +6,7 @@ import { BUNGIE_ROOT, CLASS_NAMES } from "@/lib/destiny-constants";
 import {
   buildLocationMap,
   equipItems,
+  fetchProfileFresh,
   insertPlug,
   loadoutAction,
   moveToCharacter,
@@ -34,6 +35,24 @@ function slotIsUsed(l: InGameLoadout | undefined): boolean {
   );
 }
 
+/** Copie du profil où le slot `idx` du personnage est vide. */
+function withClearedSlot(
+  profile: ProfileResponse | null,
+  charId: string,
+  idx: number
+): ProfileResponse | null {
+  const slots = profile?.characterLoadouts?.data?.[charId]?.loadouts;
+  if (!profile || !slots?.[idx] || !slotIsUsed(slots[idx])) return profile;
+  const loadouts = slots.map((l, i) => (i === idx ? { ...l, items: [] } : l));
+  return {
+    ...profile,
+    characterLoadouts: {
+      ...profile.characterLoadouts,
+      data: { ...profile.characterLoadouts?.data, [charId]: { loadouts } },
+    },
+  };
+}
+
 export default function LoadoutsPage() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [statusMsg, setStatusMsg] = useState("Chargement…");
@@ -50,6 +69,7 @@ export default function LoadoutsPage() {
   const [nameHash, setNameHash] = useState<number>(0);
   const [iconHash, setIconHash] = useState<number>(0);
   const [colorHash, setColorHash] = useState<number>(0);
+  const [confirmClear, setConfirmClear] = useState<number | null>(null);
 
   function pushLog(m: string) {
     setLog((prev) => [...prev.slice(-40), m]);
@@ -365,15 +385,23 @@ export default function LoadoutsPage() {
 
   async function clearInGame(idx: number) {
     if (busy) return;
+    setConfirmClear(null);
     setBusy(true);
+    const charId = selectedChar;
     try {
+      pushLog(`🗑️ Suppression du loadout en jeu n°${idx + 1}…`);
       await loadoutAction({
         action: "clear",
         loadoutIndex: idx,
-        characterId: selectedChar,
+        characterId: charId,
       });
-      pushLog(`🗑️ Slot ${idx + 1} vidé.`);
-      await fetchProfile();
+      pushLog(`✅ Slot ${idx + 1} supprimé.`);
+      setProfile((p) => withClearedSlot(p, charId, idx));
+      // Bungie peut encore servir l'ancien slot quelques instants après la
+      // suppression : on relit sans cache, et on garde le slot vide si besoin.
+      await sleep(800);
+      const fresh = await fetchProfileFresh("gear");
+      setProfile(withClearedSlot(fresh, charId, idx));
     } catch (e) {
       pushLog(`❌ ${e instanceof Error ? e.message : "erreur"}`);
     } finally {
@@ -431,7 +459,10 @@ export default function LoadoutsPage() {
                   }
                 : undefined
             }
-            onClick={() => setSelectedChar(c.characterId)}
+            onClick={() => {
+              setSelectedChar(c.characterId);
+              setConfirmClear(null);
+            }}
           >
             <div className="char-class">
               {CLASS_NAMES[c.classType] ?? "Gardien"}
@@ -502,8 +533,34 @@ export default function LoadoutsPage() {
                       <span className="opacity-50">#{idx + 1}</span>{" "}
                       {used ? (slotName ?? "Loadout") : "Vide"}
                     </div>
-                    {used && (
-                      <div className="flex gap-1">
+                    {used && confirmClear === idx && (
+                      <div
+                        className="flex flex-col items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-xs text-error">
+                          Supprimer ce loadout ?
+                        </span>
+                        <div className="flex gap-1">
+                          <button
+                            className="btn btn-xs btn-error"
+                            disabled={busy}
+                            onClick={() => clearInGame(idx)}
+                          >
+                            Oui
+                          </button>
+                          <button
+                            className="btn btn-xs btn-ghost"
+                            disabled={busy}
+                            onClick={() => setConfirmClear(null)}
+                          >
+                            Non
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {used && confirmClear !== idx && (
+                      <div className="flex flex-wrap justify-center gap-1">
                         <button
                           className="btn btn-xs btn-primary"
                           disabled={busy}
@@ -515,14 +572,15 @@ export default function LoadoutsPage() {
                           Équiper
                         </button>
                         <button
-                          className="btn btn-xs btn-ghost"
+                          className="btn btn-xs btn-outline btn-error"
                           disabled={busy}
+                          title="Supprimer ce loadout du jeu"
                           onClick={(e) => {
                             e.stopPropagation();
-                            clearInGame(idx);
+                            setConfirmClear(idx);
                           }}
                         >
-                          ✕
+                          🗑️ Supprimer
                         </button>
                       </div>
                     )}
