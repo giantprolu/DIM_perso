@@ -6,7 +6,6 @@ import { BUNGIE_ROOT, CLASS_NAMES } from "@/lib/destiny-constants";
 import {
   buildLocationMap,
   equipItems,
-  fetchProfileFresh,
   insertPlug,
   loadoutAction,
   moveToCharacter,
@@ -35,17 +34,23 @@ function slotIsUsed(l: InGameLoadout | undefined): boolean {
   );
 }
 
-/** Copie du profil où le slot `idx` du personnage est vide. */
-function withClearedSlot(
+const EMPTY_SLOT: InGameLoadout = {
+  colorHash: 0,
+  iconHash: 0,
+  nameHash: 0,
+  items: [],
+};
+
+/** Copie du profil où le slot `idx` du personnage est remplacé par `slot`. */
+function withSlot(
   profile: ProfileResponse | null,
   charId: string,
-  idx: number
+  idx: number,
+  slot: InGameLoadout
 ): ProfileResponse | null {
   const slots = profile?.characterLoadouts?.data?.[charId]?.loadouts;
   if (!profile || !slots?.[idx]) return profile;
-  const loadouts = slots.map((l, i) =>
-    i === idx ? { colorHash: 0, iconHash: 0, nameHash: 0, items: [] } : l
-  );
+  const loadouts = slots.map((l, i) => (i === idx ? slot : l));
   return {
     ...profile,
     characterLoadouts: {
@@ -71,7 +76,6 @@ export default function LoadoutsPage() {
   const [nameHash, setNameHash] = useState<number>(0);
   const [iconHash, setIconHash] = useState<number>(0);
   const [colorHash, setColorHash] = useState<number>(0);
-  const [confirmClear, setConfirmClear] = useState<number | null>(null);
 
   function pushLog(m: string) {
     setLog((prev) => [...prev.slice(-40), m]);
@@ -385,29 +389,27 @@ export default function LoadoutsPage() {
     }
   }
 
+  /**
+   * Supprime tout de suite à l'écran, puis côté Bungie. Pas de relecture du
+   * profil : Bungie peut resservir l'ancien slot quelques instants.
+   */
   async function clearInGame(idx: number) {
-    if (busy) return;
-    setConfirmClear(null);
-    setBusy(true);
     const charId = selectedChar;
+    const previous = inGame[idx];
+    if (!previous) return;
+    setProfile((p) => withSlot(p, charId, idx, EMPTY_SLOT));
     try {
-      pushLog(`🗑️ Suppression du loadout en jeu n°${idx + 1}…`);
       await loadoutAction({
         action: "clear",
         loadoutIndex: idx,
         characterId: charId,
       });
-      pushLog(`✅ Slot ${idx + 1} supprimé.`);
-      setProfile((p) => withClearedSlot(p, charId, idx));
-      // Bungie peut encore servir l'ancien slot quelques instants après la
-      // suppression : on relit sans cache, et on garde le slot vide si besoin.
-      await sleep(800);
-      const fresh = await fetchProfileFresh("gear");
-      setProfile(withClearedSlot(fresh, charId, idx));
+      pushLog(`🗑️ Loadout n°${idx + 1} supprimé.`);
     } catch (e) {
-      pushLog(`❌ ${e instanceof Error ? e.message : "erreur"}`);
-    } finally {
-      setBusy(false);
+      setProfile((p) => withSlot(p, charId, idx, previous));
+      pushLog(
+        `❌ Suppression du n°${idx + 1} : ${e instanceof Error ? e.message : "erreur"}`
+      );
     }
   }
 
@@ -463,7 +465,6 @@ export default function LoadoutsPage() {
             }
             onClick={() => {
               setSelectedChar(c.characterId);
-              setConfirmClear(null);
             }}
           >
             <div className="char-class">
@@ -499,25 +500,19 @@ export default function LoadoutsPage() {
                 const icon = defs?.loadoutIcons?.[l.iconHash]?.iconImagePath;
                 const color = defs?.loadoutColors?.[l.colorHash]?.colorImagePath;
                 const slotName = defs?.loadoutNames?.[l.nameHash]?.name;
-                // Un slot compte dès qu'il a des objets OU une identité
-                // (nom, icône, couleur) : Bungie peut renvoyer des objets
-                // « 0 » pour un loadout pourtant visible en jeu.
-                const used = slotIsUsed(l) || Boolean(icon || color || slotName);
-                const itemCount =
-                  l.items?.filter(
-                    (i) => i.itemInstanceId && i.itemInstanceId !== "0"
-                  ).length ?? 0;
-                const deletable = used || slotIndex === idx;
+                // Seuls les objets comptent : un slot vide garde un nom,
+                // une icône et une couleur par défaut.
+                const used = slotIsUsed(l);
                 return (
                   <div
                     key={idx}
-                    className={`rounded-box border p-2 flex flex-col items-center gap-1.5 cursor-pointer transition-colors ${
+                    className={`relative rounded-box border p-2 flex flex-col items-center gap-1.5 cursor-pointer transition-colors ${
                       slotIndex === idx
                         ? "border-primary ring-1 ring-primary"
                         : "border-base-300"
                     } ${used ? "bg-base-300" : "border-dashed opacity-70"}`}
                     onClick={() => setSlotIndex(idx)}
-                    title={`Slot ${idx + 1}${used ? ` (${itemCount} objets)` : " (vide)"} — cliquer pour le cibler`}
+                    title={`Slot ${idx + 1}${used ? "" : " (vide)"} — cliquer pour le cibler`}
                   >
                     <div className="relative w-12 h-12">
                       {used && color ? (
@@ -543,58 +538,30 @@ export default function LoadoutsPage() {
                       <span className="opacity-50">#{idx + 1}</span>{" "}
                       {used ? (slotName ?? "Loadout") : "Vide"}
                     </div>
-                    {deletable && confirmClear === idx && (
-                      <div
-                        className="flex flex-col items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
+                    {used && (
+                      <button
+                        className="btn btn-xs btn-circle btn-error absolute top-1 right-1"
+                        title="Supprimer ce loadout du jeu"
+                        aria-label={`Supprimer le loadout n°${idx + 1}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearInGame(idx);
+                        }}
                       >
-                        <span className="text-xs text-error">
-                          Supprimer ce loadout ?
-                        </span>
-                        <div className="flex gap-1">
-                          <button
-                            className="btn btn-xs btn-error"
-                            disabled={busy}
-                            onClick={() => clearInGame(idx)}
-                          >
-                            Oui
-                          </button>
-                          <button
-                            className="btn btn-xs btn-ghost"
-                            disabled={busy}
-                            onClick={() => setConfirmClear(null)}
-                          >
-                            Non
-                          </button>
-                        </div>
-                      </div>
+                        ✕
+                      </button>
                     )}
-                    {deletable && confirmClear !== idx && (
-                      <div className="flex flex-wrap justify-center gap-1">
-                        {used && (
-                          <button
-                            className="btn btn-xs btn-primary"
-                            disabled={busy}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              equipInGame(idx);
-                            }}
-                          >
-                            Équiper
-                          </button>
-                        )}
-                        <button
-                          className="btn btn-xs btn-outline btn-error"
-                          disabled={busy}
-                          title="Supprimer ce loadout du jeu"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmClear(idx);
-                          }}
-                        >
-                          🗑️ Supprimer
-                        </button>
-                      </div>
+                    {used && (
+                      <button
+                        className="btn btn-xs btn-primary"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          equipInGame(idx);
+                        }}
+                      >
+                        Équiper
+                      </button>
                     )}
                   </div>
                 );
