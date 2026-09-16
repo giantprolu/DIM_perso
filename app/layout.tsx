@@ -27,6 +27,14 @@ export default function RootLayout({
           <main className="px-3 py-4 sm:p-6 max-w-[1400px] mx-auto">
             {children}
           </main>
+          {/*
+            Le commit servi, figé à la construction. Un onglet ouvert avant un
+            déploiement garde son ancien code tant qu'on navigue sans
+            recharger : ce repère dit d'un coup d'œil quelle version tourne.
+          */}
+          <footer className="text-center text-[10px] opacity-30 pb-4 font-mono">
+            version {process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "locale"}
+          </footer>
         </ItemInspectorProvider>
       </body>
     </html>

@@ -212,6 +212,24 @@ export default function ModsPanel() {
 
   const totalChanges = plans.reduce((a, p) => a + p.combo.changes.length, 0);
 
+  /**
+   * Mods débloqués qui donnent des points à au moins une stat visée, toutes
+   * pièces confondues. À zéro, « rien à changer » ne veut pas dire « optimal »
+   * mais « rien de lisible à poser » : le résumé le dit.
+   */
+  const usefulModCount = plans.reduce(
+    (a, p) =>
+      a +
+      p.context.sockets
+        .flatMap((s) => s.options)
+        .filter(
+          (o) =>
+            o.canInsert &&
+            o.effects.some((e) => e.value > 0 && (weights[e.statHash] ?? 0) > 0)
+        ).length,
+    0
+  );
+
   /** Ce que les coefficients demandent réellement, en part du total. */
   const shares = useMemo(() => statShares(weights), [weights]);
 
@@ -483,7 +501,11 @@ export default function ModsPanel() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap border-t border-base-300 pt-3">
-            {grandDeltas.length === 0 ? (
+            {grandDeltas.length === 0 && usefulModCount === 0 && plans.length > 0 ? (
+              <span className="badge badge-warning h-auto">
+                aucun mod de stat posable n&apos;a été lu
+              </span>
+            ) : grandDeltas.length === 0 ? (
               <span className="badge badge-ghost">
                 déjà optimal pour ces priorités
               </span>

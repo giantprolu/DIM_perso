@@ -115,14 +115,27 @@ export function plugEnergyCost(defs: Defs, plugHash: number): number {
   return defs.items[plugHash]?.plug?.energyCost?.energyCost ?? 0;
 }
 
+/**
+ * Points de stats qu'apporte un plug.
+ *
+ * `isConditionallyActive` ne veut pas dire « inactif » : c'est un drapeau
+ * large, que Bungie pose aussi sur les mods de stats d'armure. Les écarter
+ * rendait chaque mod d'armure « sans effet de stat », et le panneau concluait
+ * « déjà optimal » sur des pièces entièrement vides. DIM compte ces stats
+ * comme actives. Sur les ARMES, en revanche, le drapeau marque de vraies
+ * conditions (bonus adepte sur une arme qui ne l'est pas) : on l'y respecte.
+ */
 function plugEffects(
   defs: Defs,
   plugHash: number,
-  relevantStats: number[]
+  relevantStats: number[],
+  isWeapon: boolean
 ): StatEffect[] {
   return (defs.items[plugHash]?.investmentStats ?? [])
     .filter(
-      (s) => relevantStats.includes(s.statTypeHash) && !s.isConditionallyActive
+      (s) =>
+        relevantStats.includes(s.statTypeHash) &&
+        (!isWeapon || !s.isConditionallyActive)
     )
     .map((s) => ({ statHash: s.statTypeHash, value: s.value }));
 }
@@ -241,7 +254,7 @@ function optionsFor(
       icon: def.displayProperties?.icon,
       description: def.displayProperties?.description,
       energyCost: plugEnergyCost(defs, hash),
-      effects: plugEffects(defs, hash, relevantStats),
+      effects: plugEffects(defs, hash, relevantStats, isWeapon),
       canInsert,
     });
   }
@@ -316,7 +329,7 @@ export function buildItemModContext(opts: {
       currentIcon: currentDef?.displayProperties?.icon,
       currentCost,
       currentEffects: currentPlugHash
-        ? plugEffects(defs, currentPlugHash, relevantStats)
+        ? plugEffects(defs, currentPlugHash, relevantStats, isWeapon)
         : [],
       isEmpty: !currentPlugHash || isEmptyPlug(defs, currentPlugHash),
       options,
