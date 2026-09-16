@@ -2,6 +2,7 @@ import {
   ARMOR_MOD_CATEGORY_PREFIX,
   SOCKET_CATEGORY_ARMOR_MODS,
   SOCKET_CATEGORY_WEAPON_MODS,
+  WEAPON_SLOT_ORDER,
 } from "./destiny-constants";
 import type { Defs, ProfileResponse, SocketState } from "./types";
 
@@ -912,6 +913,260 @@ export function bestModCombo(opts: {
     scoreGain: score - utility(currentGains, shares),
     energyUsed: bestCost + reservedEnergy,
     energyCapacity,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Emplacements sans stats : remplissage automatique et choix manuels
+// ---------------------------------------------------------------------------
+
+/**
+ * Seul l'emplacement général d'une pièce accepte les mods de stats. Les
+ * autres — ciblage, chargeurs, recherche de munitions, siphons — n'apportent
+ * aucun point : le solveur n'a donc aucune raison d'y poser quoi que ce soit.
+ * Ce qui donne un sens à ces mods, ce sont les ARMES portées. On les décrit
+ * par ce que les noms de mods citent : le type d'arme, les munitions,
+ * l'élément.
+ */
+export interface EquippedWeapon {
+  /** Clé stable, pour répartir les mods entre les armes */
+  key: string;
+  typeName: string;
+  ammoType?: number;
+  damageName?: string;
+}
+
+/** Armes équipées d'un personnage, telles que les noms de mods les citent. */
+export function equippedWeapons(
+  defs: Defs,
+  data: ProfileResponse,
+  characterId: string
+): EquippedWeapon[] {
+  const items = data.characterEquipment?.data?.[characterId]?.items ?? [];
+  const instances = data.itemComponents?.instances?.data ?? {};
+  const out: EquippedWeapon[] = [];
+  for (const item of items) {
+    if (!WEAPON_SLOT_ORDER.includes(item.bucketHash)) continue;
+    const def = defs.items[item.itemHash];
+    if (!def?.itemTypeDisplayName) continue;
+    const damageHash =
+      (item.itemInstanceId
+        ? instances[item.itemInstanceId]?.damageTypeHash
+        : undefined) ?? def.defaultDamageTypeHash;
+    out.push({
+      key: String(item.bucketHash),
+      typeName: def.itemTypeDisplayName,
+      ammoType: def.equippingBlock?.ammoType,
+      damageName: damageHash
+        ? defs.damageTypes?.[damageHash]?.displayProperties?.name
+        : undefined,
+    });
+  }
+  return out;
+}
+
+/**
+ * Texte comparable : minuscules, sans accents ni ponctuation, mots au
+ * singulier — « Fusils à impulsion » et « fusil à impulsion » se valent.
+ */
+function normalize(text: string): string {
+  const words = text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => (w.length > 3 && /[sx]$/.test(w) ? w.slice(0, -1) : w));
+  return ` ${words.join(" ")} `;
+}
+
+const AMMO_WORDS: Record<number, string[]> = {
+  1: ["principale", "primaire"],
+  2: ["speciale"],
+  3: ["lourde"],
+};
+
+/**
+ * Pertinence d'un mod pour une arme : 3 s'il nomme son type, 2 ses
+ * munitions, 1 son élément, 0 sinon.
+ */
+function relevanceFor(modName: string, weapon: EquippedWeapon): number {
+  const name = normalize(modName);
+  if (name.includes(normalize(weapon.typeName))) return 3;
+  const ammoWords = AMMO_WORDS[weapon.ammoType ?? 0] ?? [];
+  if (ammoWords.some((w) => name.includes(` ${w} `))) return 2;
+  if (weapon.damageName && name.includes(normalize(weapon.damageName))) return 1;
+  return 0;
+}
+
+/** Valeur spéciale d'un choix manuel : laisser l'emplacement tel qu'il est. */
+export const KEEP_CURRENT = -1;
+
+export interface FinalCombo extends ModCombo {
+  /** Emplacements remplis par le remplissage automatique */
+  autoFilled: Set<number>;
+  /** Emplacements dont le choix vient de l'utilisateur */
+  manual: Set<number>;
+  /** Énergie dépassée par les choix manuels : la pose est refusée */
+  overBudget: boolean;
+  /** Un même mod choisi sur deux emplacements de la pièce */
+  duplicate: boolean;
+}
+
+/**
+ * Plan final d'une pièce : le meilleur plan de stats, complété par le
+ * remplissage automatique des emplacements restés vides, puis corrigé par les
+ * choix manuels.
+ *
+ * `coverage` compte les mods déjà attribués à chaque arme, pièce après pièce :
+ * à pertinence égale, l'arme la moins servie passe en premier, si bien que
+ * les cinq pièces se répartissent entre les armes au lieu de toutes servir la
+ * même.
+ */
+export function finalizeCombo(opts: {
+  context: ItemModContext;
+  combo: ModCombo;
+  relevantStats: number[];
+  weapons?: EquippedWeapon[];
+  autoFill?: boolean;
+  coverage?: Map<string, number>;
+  /** socketIndex → plug choisi, ou KEEP_CURRENT */
+  overrides?: Map<number, number>;
+}): FinalCombo {
+  const {
+    context,
+    combo,
+    relevantStats,
+    weapons = [],
+    autoFill = false,
+    coverage = new Map<string, number>(),
+    overrides = new Map<number, number>(),
+  } = opts;
+  const { sockets, energyCapacity, reservedEnergy } = context;
+
+  const picks = new Map<number, number>();
+  for (const c of combo.choices) picks.set(c.socketIndex, c.plugHash);
+
+  const optionOf = (socket: ModSocket, hash: number) =>
+    socket.options.find((o) => o.hash === hash);
+  const costOf = (socket: ModSocket, hash: number) =>
+    hash === (socket.currentPlugHash ?? 0)
+      ? socket.currentCost
+      : (optionOf(socket, hash)?.energyCost ?? 0);
+  const energyUsed = () =>
+    reservedEnergy +
+    sockets.reduce(
+      (a, s) => a + costOf(s, picks.get(s.socketIndex) ?? s.currentPlugHash ?? 0),
+      0
+    );
+  const takenElsewhere = (socketIndex: number, hash: number) =>
+    sockets.some(
+      (s) =>
+        s.socketIndex !== socketIndex &&
+        (picks.get(s.socketIndex) ?? s.currentPlugHash) === hash
+    );
+
+  // Les choix manuels d'abord : l'automatique ne doit pas leur prendre la place.
+  const manual = new Set<number>();
+  for (const [socketIndex, choice] of overrides) {
+    const socket = sockets.find((s) => s.socketIndex === socketIndex);
+    if (!socket) continue;
+    const hash = choice === KEEP_CURRENT ? (socket.currentPlugHash ?? 0) : choice;
+    if (hash !== (socket.currentPlugHash ?? 0) && !optionOf(socket, hash)) continue;
+    picks.set(socketIndex, hash);
+    manual.add(socketIndex);
+  }
+
+  const autoFilled = new Set<number>();
+  if (autoFill && weapons.length > 0 && energyCapacity > 0) {
+    for (const socket of sockets) {
+      const i = socket.socketIndex;
+      if (manual.has(i) || !socket.isEmpty) continue;
+      if ((picks.get(i) ?? 0) !== (socket.currentPlugHash ?? 0)) continue;
+
+      const room = energyCapacity - energyUsed();
+      let best: { option: PlugOption; score: number; weapon: string } | null =
+        null;
+      for (const option of socket.options) {
+        if (!option.canInsert || option.energyCost > room) continue;
+        if (option.effects.length > 0) continue; // les stats sont l'affaire du solveur
+        if (takenElsewhere(i, option.hash)) continue;
+        for (const weapon of weapons) {
+          const relevance = relevanceFor(option.name, weapon);
+          if (relevance === 0) continue;
+          // Pertinence d'abord, puis l'arme la moins servie, puis le moins cher.
+          const score =
+            relevance * 1000 -
+            (coverage.get(weapon.key) ?? 0) * 10 -
+            option.energyCost;
+          if (!best || score > best.score) {
+            best = { option, score, weapon: weapon.key };
+          }
+        }
+      }
+      if (!best) continue;
+      picks.set(i, best.option.hash);
+      autoFilled.add(i);
+      coverage.set(best.weapon, (coverage.get(best.weapon) ?? 0) + 1);
+    }
+  }
+
+  // Reconstruction du plan à partir des choix retenus.
+  const choices: ComboChoice[] = [];
+  const totals = new Map<number, number>();
+  const deltas = new Map<number, number>();
+  const seen = new Set<number>();
+  let duplicate = false;
+
+  for (const socket of sockets) {
+    const current = socket.currentPlugHash ?? 0;
+    const hash = picks.get(socket.socketIndex) ?? current;
+    const isChange = hash !== current;
+    const option = isChange ? optionOf(socket, hash) : undefined;
+    const effects = isChange ? (option?.effects ?? []) : socket.currentEffects;
+
+    if (!socket.isEmpty || isChange) {
+      if (seen.has(hash)) duplicate = true;
+      seen.add(hash);
+    }
+
+    choices.push({
+      socketIndex: socket.socketIndex,
+      plugHash: hash,
+      name: isChange
+        ? (option?.name ?? `Mod ${hash}`)
+        : (socket.currentName ?? "Emplacement vide"),
+      icon: isChange ? option?.icon : socket.currentIcon,
+      energyCost: costOf(socket, hash),
+      effects: effects.filter((e) => relevantStats.includes(e.statHash)),
+      replaces: isChange && !socket.isEmpty ? socket.currentName : undefined,
+      isChange,
+    });
+
+    for (const e of effects) {
+      totals.set(e.statHash, (totals.get(e.statHash) ?? 0) + e.value);
+      deltas.set(e.statHash, (deltas.get(e.statHash) ?? 0) + e.value);
+    }
+    for (const e of socket.currentEffects) {
+      deltas.set(e.statHash, (deltas.get(e.statHash) ?? 0) - e.value);
+    }
+  }
+
+  const used = energyUsed();
+  return {
+    ...combo,
+    choices,
+    changes: choices.filter((c) => c.isChange && c.plugHash !== 0),
+    totals,
+    deltas,
+    energyUsed: used,
+    energyCapacity,
+    autoFilled,
+    manual,
+    overBudget: energyCapacity > 0 && used > energyCapacity,
+    duplicate,
   };
 }
 

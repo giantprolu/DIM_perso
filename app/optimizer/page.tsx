@@ -7,6 +7,8 @@ import {
   ARMOR_MOD_CATEGORY,
   bestModCombo,
   buildItemModContext,
+  equippedWeapons,
+  finalizeCombo,
   verifySockets,
   type StatWeights,
 } from "@/lib/mod-engine";
@@ -428,6 +430,10 @@ export default function OptimizerPage() {
            */
           const remaining = [...b.mods];
           const instances = modsData.itemComponents?.instances?.data ?? {};
+          // Les emplacements sans stats suivent les armes portées, réparties
+          // d'une pièce à l'autre.
+          const weapons = equippedWeapons(defs, modsData, targetChar);
+          const coverage = new Map<string, number>();
           let applied = 0;
           let failed = 0;
           const toVerify: {
@@ -466,7 +472,14 @@ export default function OptimizerPage() {
               continue;
             }
 
-            const combo = bestModCombo({ context, weights: statWeights });
+            const combo = finalizeCombo({
+              context,
+              combo: bestModCombo({ context, weights: statWeights }),
+              relevantStats: ARMOR_STAT_HASHES,
+              weapons,
+              autoFill: true,
+              coverage,
+            });
             if (combo.changes.length === 0) {
               pushLog(`✔️ ${piece.name} : mods déjà optimaux.`);
               continue;

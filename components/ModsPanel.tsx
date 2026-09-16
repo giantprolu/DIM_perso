@@ -14,12 +14,15 @@ import {
   WEAPON_STAT_HASHES,
 } from "@/lib/destiny-constants";
 import {
+  KEEP_CURRENT,
   bestModCombo,
   buildItemModContext,
+  equippedWeapons,
+  finalizeCombo,
   statShares,
   verifySockets,
+  type FinalCombo,
   type ItemModContext,
-  type ModCombo,
   type StatWeights,
 } from "@/lib/mod-engine";
 import { applyModCombo } from "@/lib/mod-apply";
@@ -48,8 +51,11 @@ interface GearItem {
 interface Plan {
   item: GearItem;
   context: ItemModContext;
-  combo: ModCombo;
+  combo: FinalCombo;
 }
+
+/** Choix manuels : instanceId → socketIndex → plug (ou KEEP_CURRENT). */
+type Overrides = Record<string, Record<number, number>>;
 
 /** Par défaut, chaque stat pèse pareil : une part de priorité identique. */
 function defaultWeights(stats: number[]): StatWeights {
@@ -71,6 +77,7 @@ export default function ModsPanel() {
     defaultWeights(ARMOR_STAT_HASHES)
   );
   const [fillEmpty, setFillEmpty] = useState(true);
+  const [overrides, setOverrides] = useState<Overrides>({});
   const [busy, setBusy] = useState(false);
   const inspect = useInspectItem();
   const [log, setLog] = useState<string[]>([]);
@@ -178,6 +185,16 @@ export default function ModsPanel() {
      * pas d'une arme à l'autre, chacune mérite son meilleur mod.
      */
     const acquiredStats = tab === "armor" ? new Map<number, number>() : undefined;
+    /*
+     * Les emplacements sans stats (ciblage, chargeurs, munitions…) se
+     * remplissent d'après les armes portées, réparties d'une pièce à l'autre.
+     * Les armes n'ont rien de tel : leurs emplacements portent des stats.
+     */
+    const weapons =
+      tab === "armor" && selectedChar
+        ? equippedWeapons(defs, profile, selectedChar)
+        : [];
+    const coverage = new Map<string, number>();
     return gear.map((item) => {
       const context = buildItemModContext({
         defs,
@@ -190,7 +207,21 @@ export default function ModsPanel() {
         energyCapacity: tab === "armor" ? item.energyCapacity : 0,
         energyUsed: tab === "armor" ? item.energyUsed : undefined,
       });
-      const combo = bestModCombo({ context, weights, fillEmpty, acquiredStats });
+      const base = bestModCombo({ context, weights, fillEmpty, acquiredStats });
+      const combo = finalizeCombo({
+        context,
+        combo: base,
+        relevantStats,
+        weapons,
+        autoFill: fillEmpty && tab === "armor",
+        coverage,
+        overrides: new Map(
+          Object.entries(overrides[item.instanceId] ?? {}).map(([k, v]) => [
+            Number(k),
+            v,
+          ])
+        ),
+      });
       if (acquiredStats) {
         for (const [h, v] of combo.totals) {
           acquiredStats.set(h, (acquiredStats.get(h) ?? 0) + v);
@@ -208,9 +239,24 @@ export default function ModsPanel() {
     tab,
     weights,
     fillEmpty,
+    overrides,
   ]);
 
-  const totalChanges = plans.reduce((a, p) => a + p.combo.changes.length, 0);
+  /** Un plan que Bungie refuserait (énergie dépassée, mod en double). */
+  const isBlocked = (p: Plan) => p.combo.overBudget || p.combo.duplicate;
+
+  const totalChanges = plans
+    .filter((p) => !isBlocked(p))
+    .reduce((a, p) => a + p.combo.changes.length, 0);
+
+  function setOverride(instanceId: string, socketIndex: number, value?: number) {
+    setOverrides((prev) => {
+      const forItem = { ...(prev[instanceId] ?? {}) };
+      if (value === undefined) delete forItem[socketIndex];
+      else forItem[socketIndex] = value;
+      return { ...prev, [instanceId]: forItem };
+    });
+  }
 
   /**
    * Mods débloqués qui donnent des points à au moins une stat visée, toutes
@@ -266,6 +312,14 @@ export default function ModsPanel() {
 
       for (const plan of list) {
         if (plan.combo.changes.length === 0) continue;
+        if (isBlocked(plan)) {
+          pushLog(
+            `⚠️ ${plan.item.name} : ignorée — ${
+              plan.combo.overBudget ? "énergie dépassée" : "mod en double"
+            }, corrige tes choix.`
+          );
+          continue;
+        }
         const report = await applyModCombo({
           defs,
           instanceId: plan.item.instanceId,
@@ -316,6 +370,14 @@ export default function ModsPanel() {
       }
       // L'affichage, lui, a besoin du profil : les mods disponibles changent.
       await fetchProfile();
+      // Les choix manuels sont désormais l'état du jeu : ils n'ont plus à primer.
+      setOverrides((prev) => {
+        const next = { ...prev };
+        for (const plan of list) {
+          if (!isBlocked(plan)) delete next[plan.item.instanceId];
+        }
+        return next;
+      });
 
       pushLog(
         failed === 0 && uncertain === 0
@@ -416,7 +478,9 @@ export default function ModsPanel() {
                 onChange={(e) => setFillEmpty(e.target.checked)}
               />
               <span className="label-text text-xs">
-                Combler les emplacements restés vides
+                {tab === "armor"
+                  ? "Remplir les emplacements vides (mods assortis à tes armes)"
+                  : "Combler les emplacements restés vides"}
               </span>
             </label>
           </div>
@@ -591,7 +655,22 @@ export default function ModsPanel() {
                     </div>
                   </div>
                   <div className="flex gap-1 flex-wrap">
-                    {deltas.length === 0 ? (
+                    {plan.combo.overBudget && (
+                      <span className="badge badge-sm badge-error">
+                        énergie dépassée
+                      </span>
+                    )}
+                    {plan.combo.duplicate && (
+                      <span className="badge badge-sm badge-error">
+                        mod en double
+                      </span>
+                    )}
+                    {deltas.length === 0 && plan.combo.changes.length > 0 ? (
+                      <span className="badge badge-sm badge-ghost">
+                        {plan.combo.changes.length} mod
+                        {plan.combo.changes.length > 1 ? "s" : ""} à poser
+                      </span>
+                    ) : deltas.length === 0 ? (
                       <span
                         className={`badge badge-sm ${
                           nothingUseful ? "badge-warning" : "badge-ghost"
@@ -623,7 +702,7 @@ export default function ModsPanel() {
                   {plan.combo.changes.length > 0 && (
                     <button
                       className="btn btn-xs btn-outline btn-primary ml-auto"
-                      disabled={busy}
+                      disabled={busy || isBlocked(plan)}
                       onClick={() => applyPlans([plan])}
                     >
                       Appliquer
@@ -633,41 +712,136 @@ export default function ModsPanel() {
 
                 {plan.combo.choices.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {plan.combo.choices.map((c) => (
-                      <div
-                        key={c.socketIndex}
-                        className={`flex items-center gap-2 rounded-box px-2 py-1.5 min-w-0 max-sm:w-full ${
-                          c.isChange
-                            ? "bg-base-300 ring-1 ring-primary/40"
-                            : "bg-base-300/50 opacity-60"
-                        }`}
-                      >
-                        {c.icon && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={`${BUNGIE_ROOT}${c.icon}`}
-                            alt=""
-                            className="w-8 h-8 rounded"
-                          />
-                        )}
-                        <div className="text-xs min-w-0">
-                          <div className="font-medium">{c.name}</div>
-                          <div className="opacity-50">
-                            {c.effects.length > 0
-                              ? c.effects
-                                  .map(
-                                    (e) =>
-                                      `${e.value > 0 ? "+" : ""}${e.value} ${statName(e.statHash)}`
-                                  )
-                                  .join(" · ")
-                              : "sans effet de stat"}
-                            {c.energyCost > 0 && ` · ${c.energyCost} én.`}
-                            {c.replaces && ` · remplace ${c.replaces}`}
-                            {!c.isChange && " · déjà en place"}
+                    {plan.combo.choices.map((c) => {
+                      const socket = plan.context.sockets.find(
+                        (s) => s.socketIndex === c.socketIndex
+                      );
+                      const isAuto = plan.combo.autoFilled.has(c.socketIndex);
+                      const isManual = plan.combo.manual.has(c.socketIndex);
+                      const capacity = plan.combo.energyCapacity;
+                      // Énergie disponible pour CET emplacement, son choix actuel libéré.
+                      const room =
+                        capacity > 0
+                          ? capacity - plan.combo.energyUsed + c.energyCost
+                          : Number.POSITIVE_INFINITY;
+                      const takenElsewhere = new Set(
+                        plan.combo.choices
+                          .filter((o) => o.socketIndex !== c.socketIndex)
+                          .map((o) => o.plugHash)
+                      );
+                      const current = socket?.currentPlugHash ?? 0;
+                      const options = [...(socket?.options ?? [])]
+                        .filter((o) => o.canInsert && o.hash !== current)
+                        .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+                      return (
+                        <div
+                          key={c.socketIndex}
+                          className={`flex flex-col gap-1.5 rounded-box px-2 py-1.5 min-w-0 w-full sm:w-64 ${
+                            c.isChange
+                              ? "bg-base-300 ring-1 ring-primary/40"
+                              : "bg-base-300/50"
+                          }`}
+                        >
+                          <div
+                            className={`flex items-center gap-2 min-w-0 ${
+                              c.isChange ? "" : "opacity-60"
+                            }`}
+                          >
+                            {c.icon && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={`${BUNGIE_ROOT}${c.icon}`}
+                                alt=""
+                                className="w-8 h-8 rounded shrink-0"
+                              />
+                            )}
+                            <div className="text-xs min-w-0 flex-1">
+                              <div className="font-medium truncate">
+                                {c.name}
+                                {isAuto && (
+                                  <span className="badge badge-info badge-xs ml-1.5 align-middle">
+                                    auto
+                                  </span>
+                                )}
+                                {isManual && (
+                                  <span className="badge badge-accent badge-xs ml-1.5 align-middle">
+                                    manuel
+                                  </span>
+                                )}
+                              </div>
+                              <div className="opacity-50">
+                                {c.effects.length > 0
+                                  ? c.effects
+                                      .map(
+                                        (e) =>
+                                          `${e.value > 0 ? "+" : ""}${e.value} ${statName(e.statHash)}`
+                                      )
+                                      .join(" · ")
+                                  : "sans effet de stat"}
+                                {c.energyCost > 0 && ` · ${c.energyCost} én.`}
+                                {c.replaces && ` · remplace ${c.replaces}`}
+                                {!c.isChange && " · déjà en place"}
+                              </div>
+                            </div>
                           </div>
+
+                          {socket && options.length > 0 && (
+                            <div className="flex items-center gap-1">
+                              <select
+                                className="select select-bordered select-xs flex-1 min-w-0"
+                                aria-label="Choisir le mod de cet emplacement"
+                                disabled={busy}
+                                value={c.isChange ? String(c.plugHash) : "keep"}
+                                onChange={(e) =>
+                                  setOverride(
+                                    plan.item.instanceId,
+                                    c.socketIndex,
+                                    e.target.value === "keep"
+                                      ? KEEP_CURRENT
+                                      : Number(e.target.value)
+                                  )
+                                }
+                              >
+                                <option value="keep">
+                                  Laisser : {socket.currentName ?? "vide"}
+                                </option>
+                                {options.map((o) => {
+                                  const tooCostly = o.energyCost > room;
+                                  const taken = takenElsewhere.has(o.hash);
+                                  return (
+                                    <option
+                                      key={o.hash}
+                                      value={o.hash}
+                                      disabled={tooCostly || taken}
+                                    >
+                                      {o.name}
+                                      {o.energyCost > 0 ? ` · ${o.energyCost} én.` : ""}
+                                      {taken
+                                        ? " (déjà posé ailleurs)"
+                                        : tooCostly
+                                          ? " (énergie insuffisante)"
+                                          : ""}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                              {isManual && (
+                                <button
+                                  className="btn btn-ghost btn-xs px-1.5"
+                                  title="Revenir au choix automatique"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    setOverride(plan.item.instanceId, c.socketIndex)
+                                  }
+                                >
+                                  ↺
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
