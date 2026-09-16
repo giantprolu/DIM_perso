@@ -736,7 +736,7 @@ export default function OptimizerPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-semibold">Optimiseur</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {powerContext.current > 0 && (
             <span className="badge badge-outline text-[#ffd970]">
               ✦ {powerContext.current} actuel
@@ -748,7 +748,7 @@ export default function OptimizerPage() {
         </div>
       </div>
 
-      <div role="tablist" className="tabs tabs-boxed w-fit">
+      <div role="tablist" className="tabs tabs-boxed w-fit tabs-scroll">
         <a
           role="tab"
           className={`tab${mainTab === "builds" ? " tab-active" : ""}`}
@@ -770,7 +770,7 @@ export default function OptimizerPage() {
       {mainTab === "builds" && (
       <>
       <div className="card bg-base-200 shadow border border-primary/30">
-        <div className="card-body gap-3">
+        <div className="card-body gap-3 p-4 sm:p-8">
           <div className="flex items-baseline justify-between flex-wrap gap-2">
             <h2 className="card-title text-base">
               ⚡ Optimiser ma Puissance
@@ -800,7 +800,7 @@ export default function OptimizerPage() {
             </div>
           ) : (
             <button
-              className="btn btn-primary btn-sm w-fit"
+              className="btn btn-primary btn-sm w-full sm:w-fit"
               onClick={runPower}
               disabled={computingPower || classPieces.length === 0}
             >
@@ -815,7 +815,78 @@ export default function OptimizerPage() {
           )}
 
           {powerRows.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="flex flex-col gap-2 md:hidden">
+              {powerRows.map((row, rank) => {
+                const { pb, mods } = row;
+                const modParts = mods
+                  .map((n, i) => (n > 0 ? `${n}×+10 ${statNames[i]}` : null))
+                  .filter(Boolean);
+                return (
+                  <div
+                    key={`${rank}-${pb.pieceIds.join(".")}`}
+                    className="rounded-box bg-base-300/60 p-3 flex flex-col gap-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs opacity-60">#{rank + 1}</span>
+                      <span className="font-mono text-lg text-[#ffd970]">
+                        ✦ {pb.totalPower}
+                      </span>
+                      {pb.totalPower > currentLight && (
+                        <span className="badge badge-sm badge-primary">
+                          +{pb.totalPower - currentLight}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {pb.pieceIds.map((id) => {
+                        const p = pieceById.get(id);
+                        return p?.icon ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={id}
+                            {...inspect({
+                              itemHash: p.itemHash,
+                              instanceId: id,
+                              instance: instanceFromProfile(profile, id),
+                            })}
+                            className={`w-9 h-9 rounded border border-base-300 cursor-pointer${
+                              p.isExotic ? " !border-[#ceae33]" : ""
+                            }`}
+                            src={`${BUNGIE_ROOT}${p.icon}`}
+                            alt={p.name}
+                          />
+                        ) : null;
+                      })}
+                    </div>
+                    {modParts.length > 0 && (
+                      <div className="text-xs text-primary">
+                        🔧 {modParts.join(" · ")}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        className="btn btn-sm btn-primary flex-1"
+                        disabled={busy || !targetChar}
+                        onClick={() => equipPowerBuild(row, true)}
+                      >
+                        Équiper + mods
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        disabled={busy || !targetChar}
+                        onClick={() => equipPowerBuild(row, false)}
+                      >
+                        sans mods
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {powerRows.length > 0 && (
+            <div className="overflow-x-auto hidden md:block">
               <table className="table table-zebra table-sm min-w-[680px]">
                 <thead>
                   <tr>
@@ -912,7 +983,7 @@ export default function OptimizerPage() {
 
       <div className="collapse collapse-arrow bg-base-200 shadow">
         <input type="checkbox" />
-        <div className="collapse-title font-medium text-primary">
+        <div className="collapse-title font-medium text-primary text-sm sm:text-base">
           📖 Guide de l&apos;optimiseur — comment ça marche
         </div>
         <div className="collapse-content text-sm opacity-80 flex flex-col gap-2">
@@ -947,10 +1018,10 @@ export default function OptimizerPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* ── Panneau de réglages ── */}
         <div className="card bg-base-200 shadow">
-          <div className="card-body gap-4 p-5">
+          <div className="card-body gap-4 p-4 sm:p-5">
             <h2 className="card-title text-base">Réglages</h2>
 
-            <div role="tablist" className="tabs tabs-boxed tabs-sm">
+            <div role="tablist" className="tabs tabs-boxed tabs-sm tabs-scroll">
               {Object.entries(CLASS_NAMES).map(([value, label]) => (
                 <a
                   key={value}
@@ -1137,14 +1208,105 @@ export default function OptimizerPage() {
           {builds !== null && !computing && builds.length > 0 && (
             <>
               <div className="card bg-base-200 shadow">
-                <div className="card-body">
+                <div className="card-body p-3 sm:p-8">
                   <div className="flex items-baseline justify-between gap-4">
-                    <h2 className="card-title">Assemblages retenus</h2>
+                    <h2 className="card-title text-base sm:text-xl">
+                      Assemblages retenus
+                    </h2>
                     <span className="badge badge-ghost">
                       {builds.length} résultats
                     </span>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="flex flex-col gap-2 md:hidden">
+                    {builds.map((b, rank) => {
+                      const total = b.totals.reduce((a, v) => a + v, 0);
+                      const modParts = b.mods
+                        .map((n, i) =>
+                          n > 0 ? `${n}×+10 ${statNames[i]}` : null
+                        )
+                        .filter(Boolean);
+                      const active = rank === selBuild;
+                      return (
+                        <div
+                          key={`${rank}-${b.pieceIds.join(".")}`}
+                          className={`rounded-box p-3 flex flex-col gap-2 cursor-pointer border ${
+                            active
+                              ? "bg-primary/15 border-primary/50"
+                              : "bg-base-300/60 border-transparent"
+                          }`}
+                          onClick={() => selectBuild(rank)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-xs ${active ? "text-primary" : "opacity-60"}`}
+                            >
+                              {active ? "▸ " : ""}#{rank + 1}
+                            </span>
+                            <span className="font-mono text-lg">{total}</span>
+                            <span className="text-[10px] opacity-50">pts</span>
+                            <div className="flex-1" />
+                            <span
+                              className={`font-mono text-sm ${
+                                b.power >= powerContext.current
+                                  ? "text-[#ffd970]"
+                                  : "text-error"
+                              }`}
+                            >
+                              ✦ {b.power}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {b.pieceIds.map((id) => {
+                              const p = pieceById.get(id);
+                              return p?.icon ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  key={id}
+                                  {...inspect({
+                                    itemHash: p.itemHash,
+                                    instanceId: id,
+                                    instance: instanceFromProfile(profile, id),
+                                  })}
+                                  className={`w-9 h-9 rounded border border-base-300 cursor-pointer${
+                                    p.isExotic ? " !border-[#ceae33]" : ""
+                                  }`}
+                                  src={`${BUNGIE_ROOT}${p.icon}`}
+                                  alt={p.name}
+                                />
+                              ) : null;
+                            })}
+                          </div>
+                          <div className="grid grid-cols-3 gap-x-3 gap-y-0.5 text-xs">
+                            {b.totals.map((v, i) => (
+                              <div
+                                key={ARMOR_STAT_HASHES[i]}
+                                className="flex justify-between gap-1"
+                              >
+                                <span className="opacity-60 truncate">
+                                  {statNames[i].slice(0, 3)}
+                                </span>
+                                <span
+                                  className={`font-mono${
+                                    minimums[i] > 0 && v < minimums[i]
+                                      ? " text-error"
+                                      : ""
+                                  }`}
+                                >
+                                  {v}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          {modParts.length > 0 && (
+                            <div className="text-xs text-primary">
+                              {modParts.join(" · ")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="overflow-x-auto hidden md:block">
                     <table className="table table-zebra table-sm min-w-[820px]">
                       <thead>
                         <tr>
@@ -1277,8 +1439,8 @@ export default function OptimizerPage() {
                   className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start scroll-mt-20"
                 >
                   <div className="card bg-base-200 shadow xl:col-span-2 min-w-0">
-                    <div className="card-body">
-                      <h2 className="card-title text-base">
+                    <div className="card-body p-3 sm:p-8">
+                      <h2 className="card-title text-base flex-wrap">
                         Détail — assemblage #{Math.min(selBuild, builds.length - 1) + 1}
                         <span className="badge badge-sm badge-primary badge-outline">
                           sélectionné dans le tableau
@@ -1288,7 +1450,7 @@ export default function OptimizerPage() {
                         <table className="table table-sm">
                           <thead>
                             <tr>
-                              <th>Emplacement</th>
+                              <th className="hidden sm:table-cell">Emplacement</th>
                               <th>Pièce</th>
                               <th className="text-right">Total pièce</th>
                             </tr>
@@ -1303,7 +1465,7 @@ export default function OptimizerPage() {
                               const t = stats.reduce((a, v) => a + v, 0);
                               return (
                                 <tr key={id}>
-                                  <td className="opacity-60 text-xs uppercase">
+                                  <td className="opacity-60 text-xs uppercase hidden sm:table-cell">
                                     {ARMOR_BUCKETS[p.slot]}
                                   </td>
                                   <td>
@@ -1330,7 +1492,12 @@ export default function OptimizerPage() {
                                           alt=""
                                         />
                                       ) : null}
-                                      <span>{p.name}</span>
+                                      <span className="min-w-0">
+                                        <span className="block">{p.name}</span>
+                                        <span className="block text-[10px] uppercase opacity-60 sm:hidden">
+                                          {ARMOR_BUCKETS[p.slot]}
+                                        </span>
+                                      </span>
                                       {p.isExotic && (
                                         <span className="badge badge-xs badge-primary">
                                           exotique
@@ -1345,7 +1512,7 @@ export default function OptimizerPage() {
                           </tbody>
                         </table>
                       </div>
-                      <label className="label cursor-pointer justify-end gap-2 py-0">
+                      <label className="label cursor-pointer justify-start sm:justify-end gap-2 py-0">
                         <span className="label-text text-xs opacity-70">
                           💾 Enregistrer en loadout après équipement
                         </span>
@@ -1356,7 +1523,7 @@ export default function OptimizerPage() {
                           className="checkbox checkbox-primary checkbox-xs"
                         />
                       </label>
-                      <div className="card-actions justify-end">
+                      <div className="card-actions justify-end [&>.btn]:grow sm:[&>.btn]:grow-0">
                         {simulateMods && sel.mods.some((n) => n > 0) && (
                           <button
                             className="btn btn-outline btn-sm"
@@ -1378,7 +1545,7 @@ export default function OptimizerPage() {
                   </div>
 
                   <div className="card bg-base-200 shadow">
-                    <div className="card-body gap-3">
+                    <div className="card-body gap-3 p-4 sm:p-8">
                       <h2 className="card-title text-base">Stats finales</h2>
                       {sel.totals.map((v, i) => (
                         <div key={ARMOR_STAT_HASHES[i]}>

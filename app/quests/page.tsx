@@ -552,18 +552,22 @@ export default function QuestsPage() {
           tracked ? " ring-1 ring-primary/60" : ""
         }`}
       >
-        <div className="card-body p-4">
-          <div className="flex items-start gap-4">
+        <div className="card-body p-3 sm:p-4">
+          <div className="flex items-start gap-2.5 sm:gap-4">
             {icon ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img className="item-icon" src={`${BUNGIE_ROOT}${icon}`} alt="" />
+              <img
+                className="item-icon !w-10 !h-10 sm:!w-12 sm:!h-12"
+                src={`${BUNGIE_ROOT}${icon}`}
+                alt=""
+              />
             ) : (
-              <div className="item-icon" />
+              <div className="item-icon !w-10 !h-10 sm:!w-12 sm:!h-12" />
             )}
             <div className="min-w-0 flex-1">
-              <h2 className="card-title text-base gap-2 flex-wrap">
+              <h2 className="card-title text-sm sm:text-base gap-x-2 gap-y-1 flex-wrap">
                 {tracked && <span title="Pointée en jeu">📌</span>}
-                <span className="truncate">{title}</span>
+                <span className="min-w-0 break-words">{title}</span>
                 {complete && (
                   <span className="badge badge-sm badge-success">terminé</span>
                 )}
@@ -577,7 +581,7 @@ export default function QuestsPage() {
                 <div className="text-xs opacity-50 mt-0.5">{typeLine}</div>
               )}
               {description && (
-                <p className="text-sm opacity-70 mt-1 line-clamp-2">
+                <p className="text-xs sm:text-sm opacity-70 mt-1 line-clamp-3 sm:line-clamp-2">
                   {description}
                 </p>
               )}
@@ -609,9 +613,11 @@ export default function QuestsPage() {
                 📌
               </button>
             )}
+            {/* Sur téléphone, les barres d'objectifs suffisent : le cercle
+                mangerait un quart de la largeur. */}
             {objectives.length > 0 && (
               <div
-                className={`radial-progress flex-none text-xs font-mono ${
+                className={`radial-progress flex-none text-xs font-mono hidden sm:inline-grid ${
                   complete ? "text-success" : "text-primary"
                 }`}
                 style={
@@ -688,7 +694,7 @@ export default function QuestsPage() {
         </span>
       </div>
 
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -719,9 +725,9 @@ export default function QuestsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* ── Panneau latéral ── */}
         <div className="card bg-base-200 shadow">
-          <div className="card-body gap-4 p-5">
+          <div className="card-body gap-3 sm:gap-4 p-3 sm:p-5">
             <h2 className="card-title text-base">Affichage</h2>
-            <div role="tablist" className="tabs tabs-boxed tabs-sm">
+            <div role="tablist" className="tabs tabs-boxed tabs-sm tabs-scroll">
               {(
                 [
                   ["pursuits", "Poursuites"],
@@ -741,7 +747,7 @@ export default function QuestsPage() {
             </div>
 
             {section === "pursuits" && (
-              <div className="join">
+              <div className="join flex-wrap">
                 {(
                   [
                     ["all", "Tout"],
@@ -801,7 +807,7 @@ export default function QuestsPage() {
               onChange={(e) => setFilter(e.target.value)}
             />
 
-            <div className="stats stats-vertical shadow bg-base-300">
+            <div className="stats stats-horizontal lg:stats-vertical shadow bg-base-300">
               <div className="stat py-2">
                 <div className="stat-title text-xs">Terminés</div>
                 <div className="stat-value text-2xl text-success">

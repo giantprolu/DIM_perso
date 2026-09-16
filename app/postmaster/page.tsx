@@ -293,7 +293,7 @@ export default function PostmasterPage() {
         </span>
       </div>
 
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => {
           const count = itemsByChar.get(c.characterId)?.length ?? 0;
           return (
@@ -312,7 +312,7 @@ export default function PostmasterPage() {
               <div className="char-class">
                 {CLASS_NAMES[c.classType] ?? "Gardien"}
                 {count > 0 && (
-                  <span className="badge badge-primary badge-xs ml-2 align-middle">
+                  <span className="badge badge-primary badge-xs align-middle absolute top-1 right-1 sm:static sm:ml-2">
                     {count}
                   </span>
                 )}
@@ -334,7 +334,7 @@ export default function PostmasterPage() {
       )}
 
       <div className="card bg-base-200 shadow">
-        <div className="card-body p-4 flex-row flex-wrap items-center gap-3">
+        <div className="card-body p-3 sm:p-4 flex-row flex-wrap items-center gap-3">
           <button
             className="btn btn-primary btn-sm"
             disabled={busy || items.length === 0}
@@ -349,7 +349,7 @@ export default function PostmasterPage() {
           >
             Tous les personnages ({totalAll})
           </button>
-          <label className="label cursor-pointer justify-start gap-3 py-0 ml-auto">
+          <label className="label cursor-pointer justify-start gap-3 py-0 sm:ml-auto">
             <input
               type="checkbox"
               checked={autoPull}
@@ -383,9 +383,9 @@ export default function PostmasterPage() {
                 <thead>
                   <tr>
                     <th>Objet</th>
-                    <th>Type</th>
-                    <th className="text-right">Qté</th>
-                    <th className="text-right">✦</th>
+                    <th className="hidden sm:table-cell">Type</th>
+                    <th className="text-right hidden sm:table-cell">Qté</th>
+                    <th className="text-right hidden sm:table-cell">✦</th>
                     <th className="text-right">Action</th>
                   </tr>
                 </thead>
@@ -398,7 +398,7 @@ export default function PostmasterPage() {
                             itemHash: item.itemHash,
                             instanceId: item.itemInstanceId,
                           })}
-                          className="flex items-center gap-3 cursor-pointer"
+                          className="flex items-center gap-2 sm:gap-3 cursor-pointer"
                         >
                           {item.icon ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -412,16 +412,24 @@ export default function PostmasterPage() {
                           ) : (
                             <div className="item-icon !w-10 !h-10" />
                           )}
-                          <span className="font-medium">{item.name}</span>
+                          <span className="min-w-0">
+                            <span className="block font-medium">{item.name}</span>
+                            {/* Sur téléphone, les colonnes passent sous le nom. */}
+                            <span className="block text-[11px] opacity-60 sm:hidden">
+                              {item.typeName}
+                              {item.quantity > 1 && ` · ×${item.quantity}`}
+                              {item.power > 0 && ` · ✦ ${item.power}`}
+                            </span>
+                          </span>
                         </div>
                       </td>
-                      <td className="text-xs opacity-60 uppercase">
+                      <td className="text-xs opacity-60 uppercase hidden sm:table-cell">
                         {item.typeName}
                       </td>
-                      <td className="text-right font-mono">
+                      <td className="text-right font-mono hidden sm:table-cell">
                         {item.quantity > 1 ? `×${item.quantity}` : "—"}
                       </td>
-                      <td className="text-right font-mono">
+                      <td className="text-right font-mono hidden sm:table-cell">
                         {item.power > 0 ? item.power : "—"}
                       </td>
                       <td className="text-right">

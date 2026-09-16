@@ -419,7 +419,7 @@ export default function LoadoutsPage() {
         menu de personnage.
       </p>
 
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -451,7 +451,7 @@ export default function LoadoutsPage() {
 
       {/* ── Loadouts en jeu ── */}
       <div className="card bg-base-200 shadow">
-        <div className="card-body p-5 gap-4">
+        <div className="card-body p-3 sm:p-5 gap-4">
           <h2 className="card-title text-base">
             Loadouts en jeu — {CLASS_NAMES[currentChar?.classType ?? 0]}
           </h2>
@@ -545,7 +545,7 @@ export default function LoadoutsPage() {
                 )}
               </span>
               <select
-                className="select select-bordered select-sm"
+                className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none"
                 value={nameHash}
                 onChange={(e) => setNameHash(Number(e.target.value))}
               >
@@ -556,7 +556,7 @@ export default function LoadoutsPage() {
                 ))}
               </select>
               <button
-                className="btn btn-sm btn-primary"
+                className="btn btn-sm btn-primary w-full sm:w-auto"
                 disabled={busy || !currentChar}
                 onClick={snapshotCurrent}
               >
@@ -617,16 +617,16 @@ export default function LoadoutsPage() {
 
       {/* ── Enregistrer un loadout du site ── */}
       <div className="card bg-base-200 shadow">
-        <div className="card-body p-4 flex-row flex-wrap items-center gap-3">
+        <div className="card-body p-3 sm:p-4 flex-row flex-wrap items-center gap-3">
           <input
-            className="input input-bordered input-sm flex-1 min-w-64"
+            className="input input-bordered input-sm flex-1 min-w-0 basis-full sm:basis-auto sm:min-w-64"
             placeholder="Nom du loadout (ex. Raid — Grenade Solaire)"
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={busy}
           />
           <button
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary btn-sm w-full sm:w-auto"
             onClick={saveCurrent}
             disabled={busy}
           >
@@ -645,9 +645,9 @@ export default function LoadoutsPage() {
           const sameClass = l.classType === currentChar?.classType;
           return (
             <div className="card bg-base-200 shadow" key={l.id}>
-              <div className="card-body p-5">
+              <div className="card-body p-3 sm:p-5">
                 <div className="flex items-baseline justify-between gap-3 flex-wrap">
-                  <span className="card-title text-base">
+                  <span className="card-title text-base flex-wrap">
                     {l.name}
                     <span className="badge badge-sm badge-outline badge-primary">
                       {CLASS_NAMES[l.classType]}
@@ -680,7 +680,7 @@ export default function LoadoutsPage() {
                     ) : null;
                   })}
                 </div>
-                <div className="card-actions justify-end">
+                <div className="card-actions justify-end [&>.btn]:grow sm:[&>.btn]:grow-0">
                   <button
                     className="btn btn-sm btn-outline"
                     disabled={busy || !sameClass}

@@ -133,7 +133,7 @@ function MilestoneCard({ milestone }: { milestone: MilestoneView }) {
         milestone.complete ? "border-success/40" : "border-base-300"
       }`}
     >
-      <div className="card-body p-4 gap-3">
+      <div className="card-body p-3 sm:p-4 gap-3">
         <div className="flex items-start gap-3">
           {milestone.icon ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -145,7 +145,7 @@ function MilestoneCard({ milestone }: { milestone: MilestoneView }) {
           ) : null}
           <div className="flex-1 min-w-0">
             <h2 className="card-title text-base gap-2 flex-wrap">
-              <span className="truncate">{milestone.name}</span>
+              <span className="min-w-0 break-words">{milestone.name}</span>
               {milestone.complete && (
                 <span className="badge badge-success badge-sm">terminé</span>
               )}
@@ -169,7 +169,7 @@ function MilestoneCard({ milestone }: { milestone: MilestoneView }) {
                 {activity.modifiers.map((mod) => (
                   <span
                     key={mod.hash}
-                    className="badge badge-ghost badge-sm gap-1"
+                    className="badge badge-ghost badge-sm gap-1 h-auto min-h-5 max-w-full"
                     title={mod.description}
                   >
                     {mod.icon && (
@@ -205,7 +205,7 @@ function MilestoneCard({ milestone }: { milestone: MilestoneView }) {
               {milestone.rewards.map((reward, i) => (
                 <span
                   key={`${reward.name}-${i}`}
-                  className={`badge badge-sm ${
+                  className={`badge badge-sm h-auto min-h-5 max-w-full ${
                     reward.earned || reward.redeemed
                       ? "badge-success"
                       : "badge-outline"
@@ -231,7 +231,7 @@ function RankCard({ rank }: { rank: RankView }) {
 
   return (
     <div className="card h-full bg-base-200 shadow border border-base-300">
-      <div className="card-body p-4 gap-2">
+      <div className="card-body p-3 sm:p-4 gap-2">
         <div className="flex items-center gap-3">
           {rank.icon ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -455,7 +455,7 @@ export default function WeeklyPage() {
         </span>
       </div>
 
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -479,7 +479,7 @@ export default function WeeklyPage() {
         <div className="flex flex-wrap items-stretch gap-4">
           {seasonPass && (
             <div className="card grow shrink basis-[420px] min-w-0 bg-base-200 shadow border border-base-300">
-              <div className="card-body p-4 gap-2">
+              <div className="card-body p-3 sm:p-4 gap-2">
                 <div className="flex items-center gap-3">
                   {seasonPass.icon ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -524,7 +524,7 @@ export default function WeeklyPage() {
 
           {artifact && (
             <div className="card grow shrink basis-[420px] min-w-0 bg-base-200 shadow border border-base-300">
-              <div className="card-body p-4 gap-2">
+              <div className="card-body p-3 sm:p-4 gap-2">
                 <div className="flex items-center gap-3">
                   {artifact.icon ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -572,7 +572,7 @@ export default function WeeklyPage() {
       )}
 
       <div className="flex items-center gap-3 flex-wrap">
-        <div role="tablist" className="tabs tabs-bordered">
+        <div role="tablist" className="tabs tabs-bordered tabs-scroll">
           {(
             [
               ["todo", `À faire (${todo.length})`],

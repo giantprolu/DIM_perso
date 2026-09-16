@@ -333,7 +333,7 @@ export default function HomePage() {
               return (
                 <div
                   key={rank.hash}
-                  className="card bg-base-200 border border-base-300 shadow grow basis-64 max-w-sm"
+                  className="card bg-base-200 border border-base-300 shadow grow min-w-0 basis-64 max-w-sm"
                 >
                   <div className="card-body p-3 gap-1.5">
                     <div className="flex items-center gap-2.5">
@@ -414,7 +414,7 @@ export default function HomePage() {
             <Link
               key={p.href}
               href={p.href}
-              className="card bg-base-200 border border-base-300 shadow hover:border-primary transition-colors grow basis-64 max-w-sm"
+              className="card bg-base-200 border border-base-300 shadow hover:border-primary transition-colors grow min-w-0 basis-64 sm:max-w-sm"
             >
               <div className="card-body p-4 flex-row items-center gap-3">
                 <RaIcon icon={p.icon} className="text-2xl text-primary" />
@@ -467,7 +467,7 @@ function Header({
           />
         )}
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold truncate">
+          <h1 className="text-xl sm:text-2xl font-semibold truncate">
             {view.playerName}
             {view.playerCode !== undefined && (
               <span className="opacity-40 text-lg font-normal">
@@ -607,14 +607,14 @@ function KeyFigure({
   accent?: string;
 }) {
   return (
-    <div className="card bg-base-200 border border-base-300 shadow grow basis-44 max-w-xs">
-      <div className="card-body p-4 gap-1">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wider opacity-60">
-          <RaIcon icon={icon} className="text-base" />
-          {label}
+    <div className="card bg-base-200 border border-base-300 shadow grow min-w-0 basis-[calc(50%-0.375rem)] sm:basis-44 max-w-xs">
+      <div className="card-body p-3 sm:p-4 gap-1">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs uppercase tracking-wider opacity-60">
+          <RaIcon icon={icon} className="text-sm sm:text-base" />
+          <span className="truncate">{label}</span>
         </div>
         <div
-          className={`text-3xl font-light leading-none ${accent ?? "text-primary"}`}
+          className={`text-2xl sm:text-3xl font-light leading-none ${accent ?? "text-primary"}`}
         >
           {value}
         </div>
@@ -629,7 +629,7 @@ function CharacterPanel({ card }: { card: CharacterCard }) {
   const style = activity ? familyStyle(activity.family) : null;
 
   return (
-    <div className="card shadow border border-base-300 overflow-hidden grow basis-80 max-w-md">
+    <div className="card shadow border border-base-300 overflow-hidden grow min-w-0 basis-72 sm:basis-80 max-w-md">
       <div
         className="bg-cover bg-center"
         style={
@@ -748,7 +748,7 @@ function ProgressPanel({
   footer: string;
 }) {
   return (
-    <div className="card bg-base-200 border border-base-300 shadow grow basis-80 max-w-xl">
+    <div className="card bg-base-200 border border-base-300 shadow grow min-w-0 basis-72 sm:basis-80 max-w-xl">
       <div className="card-body p-4 gap-2">
         <div className="flex items-center gap-3">
           {image ? (
@@ -796,7 +796,7 @@ function ProgressPanel({
 function RecentRow({ row }: { row: RecentActivity }) {
   const style = familyStyle(row.family);
   return (
-    <div className="flex items-center gap-3 px-2 py-2">
+    <div className="flex items-center gap-2 sm:gap-3 px-1 sm:px-2 py-2">
       <RaIcon icon={style.icon} className={`text-xl w-6 shrink-0 ${style.color}`} />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium truncate">{row.name}</div>
@@ -808,6 +808,7 @@ function RecentRow({ row }: { row: RecentActivity }) {
           {row.standing === undefined && !row.completed && (
             <span className="text-warning">· abandonnée</span>
           )}
+          <span className="sm:hidden">· {formatWhen(row.date)}</span>
         </div>
       </div>
       <div className="text-xs font-mono opacity-70 text-right shrink-0">
@@ -816,7 +817,7 @@ function RecentRow({ row }: { row: RecentActivity }) {
         </div>
         <div className="opacity-60">{formatDuration(row.durationSeconds)}</div>
       </div>
-      <div className="text-xs opacity-50 w-20 text-right shrink-0">
+      <div className="text-xs opacity-50 w-20 text-right shrink-0 hidden sm:block">
         {formatWhen(row.date)}
       </div>
     </div>
@@ -826,9 +827,9 @@ function RecentRow({ row }: { row: RecentActivity }) {
 function SignedOut({ error }: { error: string | null }) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="hero py-12">
+      <div className="hero py-8 sm:py-12">
         <div className="hero-content text-center flex-col">
-          <h1 className="text-4xl font-semibold tracking-widest uppercase">
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-widest uppercase">
             DIM Perso
           </h1>
           <p className="max-w-xl opacity-70">
@@ -851,7 +852,7 @@ function SignedOut({ error }: { error: string | null }) {
         {PAGES.map((p) => (
           <div
             key={p.href}
-            className="card bg-base-200 border border-base-300 grow basis-64 max-w-sm"
+            className="card bg-base-200 border border-base-300 grow min-w-0 basis-64 sm:max-w-sm"
           >
             <div className="card-body p-4 flex-row items-center gap-3">
               <RaIcon icon={p.icon} className="text-2xl text-primary" />

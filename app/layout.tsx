@@ -24,7 +24,9 @@ export default function RootLayout({
         */}
         <ItemInspectorProvider>
           <Nav />
-          <main className="p-6 max-w-[1400px] mx-auto">{children}</main>
+          <main className="px-3 py-4 sm:p-6 max-w-[1400px] mx-auto">
+            {children}
+          </main>
         </ItemInspectorProvider>
       </body>
     </html>

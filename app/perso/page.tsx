@@ -33,6 +33,7 @@ import {
 import { buildItemDetail, type ItemDetail } from "@/lib/item-detail";
 import { instanceFromProfile } from "@/lib/item-info";
 import { useInspectItem } from "@/components/ItemInspector";
+import { useCanHover } from "@/lib/use-media";
 import type {
   Character,
   Defs,
@@ -109,6 +110,11 @@ export default function PersoPage() {
   const [log, setLog] = useState<string[]>([]);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inspect = useInspectItem();
+  /*
+   * Sans souris, le survol n'existe pas : toucher un emplacement ouvre la
+   * liste d'échange dans un panneau en bas d'écran, et affiche le détail.
+   */
+  const canHover = useCanHover();
 
   function pushLog(m: string) {
     setLog((prev) => [...prev.slice(-8), m]);
@@ -471,12 +477,12 @@ export default function PersoPage() {
     return (
       <div
         className="relative"
-        onMouseEnter={() => swappable && openHover(bucket)}
-        onMouseLeave={closeHoverSoon}
+        onMouseEnter={() => canHover && swappable && openHover(bucket)}
+        onMouseLeave={() => canHover && closeHoverSoon()}
       >
         {item ? (
           <button
-            className={`relative w-14 h-14 rounded overflow-hidden border-2 transition-all ${
+            className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded overflow-hidden border-2 transition-all ${
               selectedItem === item.instanceId
                 ? "border-primary scale-105"
                 : item.isExotic
@@ -484,11 +490,16 @@ export default function PersoPage() {
                   : "border-base-300 hover:border-primary"
             }`}
             title={`${item.name} — ✦ ${item.power}`}
-            onClick={() =>
-              setSelectedItem(
-                selectedItem === item.instanceId ? null : item.instanceId
-              )
-            }
+            onClick={() => {
+              if (canHover) {
+                setSelectedItem(
+                  selectedItem === item.instanceId ? null : item.instanceId
+                );
+                return;
+              }
+              setSelectedItem(item.instanceId);
+              if (swappable) setHoverBucket(bucket);
+            }}
           >
             {item.icon && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -505,19 +516,45 @@ export default function PersoPage() {
             )}
           </button>
         ) : (
-          <div className="w-14 h-14 rounded bg-base-300/40 border border-base-300" />
+          <button
+            className="block w-12 h-12 sm:w-14 sm:h-14 rounded bg-base-300/40 border border-base-300"
+            aria-label="Emplacement vide"
+            onClick={() => !canHover && swappable && setHoverBucket(bucket)}
+          />
+        )}
+
+        {open && swappable && !canHover && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50"
+            role="presentation"
+            onClick={() => setHoverBucket(null)}
+          />
         )}
 
         {open && swappable && (
           <div
-            className={`absolute top-0 z-30 w-64 max-h-80 overflow-y-auto bg-base-300 border border-primary/40 rounded-box shadow-xl p-2 ${
-              side === "left" ? "left-16" : "right-16"
-            }`}
-            onMouseEnter={() => openHover(bucket)}
-            onMouseLeave={closeHoverSoon}
+            className={
+              canHover
+                ? `absolute top-0 z-30 w-64 max-h-80 overflow-y-auto bg-base-300 border border-primary/40 rounded-box shadow-xl p-2 ${
+                    side === "left" ? "left-16" : "right-16"
+                  }`
+                : "fixed inset-x-0 bottom-0 z-50 max-h-[70dvh] overflow-y-auto bg-base-300 border-t border-primary/40 rounded-t-box shadow-xl p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+            }
+            onMouseEnter={() => canHover && openHover(bucket)}
+            onMouseLeave={() => canHover && closeHoverSoon()}
           >
-            <div className="text-[11px] uppercase tracking-wider opacity-60 px-1 pb-1">
-              Changer — {candidates.length} disponibles
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider opacity-60 px-1 pb-1">
+              <span className="flex-1">
+                Changer — {candidates.length} disponibles
+              </span>
+              {!canHover && (
+                <button
+                  className="btn btn-ghost btn-xs normal-case"
+                  onClick={() => setHoverBucket(null)}
+                >
+                  Fermer
+                </button>
+              )}
             </div>
             {candidates.length === 0 ? (
               <div className="text-xs opacity-50 px-1 py-2">
@@ -541,7 +578,9 @@ export default function PersoPage() {
                     },
                     { clickable: false }
                   )}
-                  className="flex items-center gap-2 w-full text-left rounded px-1 py-1 hover:bg-base-100 disabled:opacity-40"
+                  className={`flex items-center gap-2 w-full text-left rounded px-1 hover:bg-base-100 disabled:opacity-40 ${
+                    canHover ? "py-1" : "py-2"
+                  }`}
                   onClick={() => equipCandidate(c)}
                 >
                   {c.icon && (
@@ -602,7 +641,7 @@ export default function PersoPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -647,9 +686,14 @@ export default function PersoPage() {
               : undefined
           }
         >
-          <div className="flex items-start justify-center gap-6 md:gap-12 p-6 flex-wrap md:flex-nowrap">
-            <div className="flex flex-col gap-2.5 order-2 md:order-1">
-              <div className="mb-1">
+          {/*
+            Sur téléphone, le Gardien passe en tête et ses deux colonnes
+            d'équipement deviennent deux rangées : côte à côte, elles ne
+            laisseraient au centre que la moitié de l'écran.
+          */}
+          <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-12 p-3 sm:p-6">
+            <div className="flex flex-row md:flex-col gap-2 md:gap-2.5 order-2 md:order-1">
+              <div className="mr-1.5 md:mr-0 md:mb-1">
                 <ItemTile bucket={BUCKET_SUBCLASS} side="left" />
               </div>
               {WEAPON_SLOT_ORDER.map((b) => (
@@ -657,7 +701,7 @@ export default function PersoPage() {
               ))}
             </div>
 
-            <div className="flex flex-col items-center gap-3 order-1 md:order-2 min-w-56 py-2">
+            <div className="flex flex-col items-center gap-3 order-1 md:order-2 w-full max-w-xs md:w-auto md:max-w-none md:min-w-56 py-2">
               <div className="text-xs tracking-[0.3em] uppercase opacity-60">
                 {CLASS_NAMES[currentChar?.classType ?? 0]}
               </div>
@@ -665,7 +709,7 @@ export default function PersoPage() {
                 <span className="text-[#ffd970] text-2xl leading-none mt-2">
                   ✦
                 </span>
-                <span className="text-6xl font-light text-[#ffd970] leading-none">
+                <span className="text-5xl sm:text-6xl font-light text-[#ffd970] leading-none">
                   {currentChar?.light ?? 0}
                 </span>
               </div>
@@ -698,7 +742,7 @@ export default function PersoPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-2.5 order-3">
+            <div className="flex flex-row md:flex-col gap-2 md:gap-2.5 order-3">
               {ARMOR_SLOT_ORDER.map((b) => (
                 <ItemTile key={b} bucket={b} side="right" />
               ))}
@@ -708,8 +752,17 @@ export default function PersoPage() {
       </div>
 
       <p className="text-xs opacity-50 text-center">
-        Survole un emplacement pour changer d&apos;arme ou de pièce
-        d&apos;armure · clique pour voir le détail complet.
+        {canHover ? (
+          <>
+            Survole un emplacement pour changer d&apos;arme ou de pièce
+            d&apos;armure · clique pour voir le détail complet.
+          </>
+        ) : (
+          <>
+            Touche un emplacement pour changer d&apos;arme ou de pièce
+            d&apos;armure — son détail complet s&apos;affiche plus bas.
+          </>
+        )}
       </p>
 
       {/* ── Détail complet ── */}
@@ -723,7 +776,7 @@ export default function PersoPage() {
               }}
             />
           )}
-          <div className="card-body p-5 gap-4">
+          <div className="card-body p-4 sm:p-5 gap-4">
             <div className="flex items-start gap-3 flex-wrap">
               {detail.icon && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -807,7 +860,7 @@ export default function PersoPage() {
                 ) : (
                   detail.stats.map((s) => (
                     <div key={s.hash} className="flex items-center gap-2.5">
-                      <span className="text-[11px] w-32 opacity-70 truncate">
+                      <span className="text-[11px] w-24 sm:w-32 opacity-70 truncate">
                         {s.name}
                       </span>
                       <progress
@@ -832,7 +885,7 @@ export default function PersoPage() {
                     </div>
                     <div className="flex flex-col gap-1.5">
                       {detail.perkSockets.map((s) => (
-                        <div key={s.socketIndex} className="flex gap-1.5">
+                        <div key={s.socketIndex} className="flex gap-1.5 flex-wrap">
                           {s.plugs.map((p) => (
                             <button
                               key={p.hash}

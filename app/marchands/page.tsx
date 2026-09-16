@@ -192,11 +192,11 @@ export default function MarchandsPage() {
           big ? "border border-primary/40" : ""
         }`}
       >
-        <div className="card-body p-4 gap-2">
+        <div className="card-body p-3 sm:p-4 gap-2">
           {/* En vente : le manifest suffit à juger l'objet avant de l'acheter. */}
           <div
             {...inspect({ itemHash: o.itemHash })}
-            className="flex items-start gap-3 cursor-pointer"
+            className="flex items-start gap-2.5 sm:gap-3 cursor-pointer"
           >
             {o.icon ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -248,7 +248,7 @@ export default function MarchandsPage() {
           <div className="divider my-0" />
 
           <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-            <span className="flex items-center gap-1.5 opacity-70">
+            <span className="flex items-center gap-1.5 opacity-70 flex-wrap min-w-0">
               {o.vendorIcon && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -330,7 +330,7 @@ export default function MarchandsPage() {
         marchand et ce que ça te coûte.
       </p>
 
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -401,7 +401,7 @@ export default function MarchandsPage() {
                   <span className="badge badge-xs">{v.offerCount}</span>
                 </button>
               ))}
-              <label className="label cursor-pointer gap-2 py-0 ml-auto">
+              <label className="label cursor-pointer gap-2 py-0 basis-full justify-start sm:basis-auto sm:ml-auto">
                 <input
                   type="checkbox"
                   className="toggle toggle-primary toggle-sm"
@@ -450,7 +450,7 @@ export default function MarchandsPage() {
 
           {analysis.vendors.length > 0 && (
             <div className="card bg-base-200 shadow">
-              <div className="card-body p-4">
+              <div className="card-body p-3 sm:p-4">
                 <h2 className="card-title text-sm">Où et jusqu&apos;à quand</h2>
                 <div className="overflow-x-auto">
                   <table className="table table-sm">
@@ -467,8 +467,16 @@ export default function MarchandsPage() {
                               />
                             )}
                           </td>
-                          <td className="font-medium">{v.name}</td>
-                          <td className="text-xs opacity-70">📍 {v.location}</td>
+                          <td className="font-medium">
+                            {v.name}
+                            {/* Sur téléphone, le lieu passe sous le nom. */}
+                            <div className="text-xs font-normal opacity-70 sm:hidden">
+                              📍 {v.location}
+                            </div>
+                          </td>
+                          <td className="text-xs opacity-70 hidden sm:table-cell">
+                            📍 {v.location}
+                          </td>
                           <td className="text-xs opacity-50 text-right">
                             {timeUntil(v.refreshDate)
                               ? `rotation dans ${timeUntil(v.refreshDate)}`

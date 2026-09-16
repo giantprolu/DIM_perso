@@ -134,7 +134,7 @@ function CharacterScreen({
           : { backgroundColor: "rgba(20,24,31,.5)" }
       }
     >
-      <div className="flex items-start justify-between gap-3 p-3">
+      <div className="flex items-start justify-between gap-2 sm:gap-3 p-2 sm:p-3">
         <div className="flex flex-col gap-2">
           {WEAPON_SLOT_ORDER.map((b) => (
             <Slot
@@ -155,7 +155,7 @@ function CharacterScreen({
             <span className="text-[#ffd970] text-base leading-none mt-1.5">
               ✦
             </span>
-            <span className="text-5xl font-light text-[#ffd970] leading-none">
+            <span className="text-4xl sm:text-5xl font-light text-[#ffd970] leading-none">
               {character.light}
             </span>
           </div>
@@ -167,8 +167,8 @@ function CharacterScreen({
 
           <div className="w-full flex flex-col gap-1 mt-2">
             {character.stats.map((v, i) => (
-              <div key={ARMOR_STAT_HASHES[i]} className="flex items-center gap-2">
-                <span className="text-[11px] w-20 opacity-70 truncate">
+              <div key={ARMOR_STAT_HASHES[i]} className="flex items-center gap-1.5 sm:gap-2">
+                <span className="text-[11px] w-14 sm:w-20 opacity-70 truncate">
                   {statNames[i]}
                 </span>
                 <progress
@@ -280,7 +280,7 @@ export default function PlayerPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {target.icon && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -361,7 +361,7 @@ export default function PlayerPanel({
       )}
 
       {characters.length > 1 && (
-        <div role="tablist" className="tabs tabs-boxed tabs-sm">
+        <div role="tablist" className="tabs tabs-boxed tabs-sm tabs-scroll">
           {characters.map((c) => (
             <a
               key={c.characterId}

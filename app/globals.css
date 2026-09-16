@@ -5,21 +5,44 @@
 /* ── Customs conservés : tout ce qui porte les images Bungie ── */
 
 @layer components {
+  /*
+   * Rangée des personnages. Sur téléphone, les trois boutons se partagent la
+   * largeur au lieu de s'empiler : on les voit tous d'un coup d'œil.
+   */
+  .char-row {
+    @apply flex gap-2 sm:gap-2.5 sm:flex-wrap;
+  }
+
   /* Boutons personnage avec emblème en fond */
   .char-btn {
-    @apply relative min-w-[220px] h-16 rounded-lg border-2 border-base-300 bg-cover bg-center text-white cursor-pointer overflow-hidden text-left;
-    padding: 8px 12px 8px 72px;
+    @apply relative flex-1 min-w-0 h-14 rounded-lg border-2 border-base-300 bg-cover bg-center text-white cursor-pointer overflow-hidden text-left px-2.5 py-1.5;
+    @apply sm:flex-none sm:min-w-[220px] sm:h-16 sm:py-2 sm:pr-3 sm:pl-[72px];
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   }
   .char-btn.active {
     @apply border-primary;
   }
   .char-btn .char-class {
-    @apply font-bold text-base leading-tight;
+    @apply font-bold text-sm sm:text-base leading-tight truncate;
   }
   .char-btn .char-light {
-    @apply text-sm;
+    @apply text-xs sm:text-sm;
     color: #ffd970;
+  }
+
+  /*
+   * Onglets qui défilent au lieu de déborder de l'écran : les onglets daisyUI
+   * tiennent sur une seule ligne quoi qu'il arrive.
+   */
+  .tabs-scroll {
+    @apply max-w-full overflow-x-auto overflow-y-hidden;
+    scrollbar-width: none;
+  }
+  .tabs-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .tabs-scroll > .tab {
+    @apply whitespace-nowrap;
   }
 
   /* Icônes d'objets Bungie */

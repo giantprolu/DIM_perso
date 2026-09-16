@@ -22,6 +22,7 @@ import {
 import { findDuplicates, type DuplicateGroup } from "@/lib/item-detail";
 import { instanceFromProfile } from "@/lib/item-info";
 import { useInspectItem } from "@/components/ItemInspector";
+import { useIsWide } from "@/lib/use-media";
 import type {
   Character,
   Defs,
@@ -69,6 +70,12 @@ export default function WeaponsPage() {
   const [tierFilter, setTierFilter] = useState<string>("all");
   const [showDuplicates, setShowDuplicates] = useState(false);
   const inspect = useInspectItem();
+  /*
+   * Le tableau réclame 1000 px : en dessous, chaque arme devient une carte.
+   * Un seul des deux est rendu, l'arsenal comptant parfois des centaines
+   * de lignes.
+   */
+  const wide = useIsWide();
 
   useEffect(() => {
     let cancelled = false;
@@ -358,7 +365,7 @@ export default function WeaponsPage() {
         </span>
       </div>
 
-      <div className="flex gap-2.5 flex-wrap">
+      <div className="char-row">
         {characters.map((c) => (
           <button
             key={c.characterId}
@@ -380,7 +387,7 @@ export default function WeaponsPage() {
         ))}
       </div>
 
-      <div role="alert" className="alert alert-info py-2 text-sm">
+      <div role="alert" className="alert alert-info py-2 text-xs sm:text-sm">
         <span>
           Les équipements et transferts visent <strong>{activeClass}</strong>.
           La recherche couvre aussi les noms de perks.
@@ -395,8 +402,8 @@ export default function WeaponsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <div role="tablist" className="tabs tabs-boxed tabs-sm">
+      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+        <div role="tablist" className="tabs tabs-boxed tabs-sm tabs-scroll">
           <a
             role="tab"
             className={`tab${slotFilter === "all" ? " tab-active" : ""}`}
@@ -416,7 +423,7 @@ export default function WeaponsPage() {
           ))}
         </div>
         <select
-          className="select select-bordered select-sm"
+          className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none"
           value={damageFilter}
           onChange={(e) => setDamageFilter(e.target.value)}
         >
@@ -428,7 +435,7 @@ export default function WeaponsPage() {
           ))}
         </select>
         <select
-          className="select select-bordered select-sm"
+          className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none"
           value={tierFilter}
           onChange={(e) => setTierFilter(e.target.value)}
         >
@@ -444,7 +451,7 @@ export default function WeaponsPage() {
           Doublons ({duplicates.length})
         </button>
         <input
-          className="input input-bordered input-sm w-64"
+          className="input input-bordered input-sm w-full sm:w-64"
           placeholder="Filtrer par nom, type, perk…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -453,7 +460,7 @@ export default function WeaponsPage() {
 
       {showDuplicates && (
         <div className="card bg-base-200 shadow">
-          <div className="card-body p-4 gap-3">
+          <div className="card-body p-3 sm:p-4 gap-3">
             <h2 className="card-title text-base">
               Exemplaires multiples
               <span className="badge badge-sm badge-ghost">
@@ -482,7 +489,7 @@ export default function WeaponsPage() {
                         g.copies[0]?.instanceId
                       ),
                     })}
-                    className="flex items-center gap-3 bg-base-300 rounded-box px-3 py-2 cursor-pointer"
+                    className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1 bg-base-300 rounded-box px-3 py-2 cursor-pointer"
                   >
                     {g.icon && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -501,7 +508,7 @@ export default function WeaponsPage() {
                     <span className="badge badge-sm badge-warning">
                       ×{g.copies.length}
                     </span>
-                    <div className="flex gap-1.5 text-xs font-mono opacity-70">
+                    <div className="flex flex-wrap gap-1.5 text-xs font-mono opacity-70 basis-full sm:basis-auto pl-12 sm:pl-0">
                       {g.copies.map((c) => (
                         <span key={c.instanceId}>
                           {c.power || "—"}
@@ -517,6 +524,117 @@ export default function WeaponsPage() {
         </div>
       )}
 
+      {!wide && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {shown.length === 0 ? (
+            <div className="opacity-60 py-8 text-center sm:col-span-2">
+              Aucune arme ne correspond.
+            </div>
+          ) : (
+            shown.map((w) => {
+              const loc = locations.get(w.id);
+              return (
+                <div key={w.id} className="card bg-base-200 shadow">
+                  <div className="card-body p-3 gap-2">
+                    <div
+                      {...inspect({
+                        itemHash: w.itemHash,
+                        instanceId: w.id,
+                        instance: instanceFromProfile(profile, w.id),
+                      })}
+                      className="flex items-center gap-3 cursor-pointer"
+                    >
+                      {w.icon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          className={`item-icon !w-11 !h-11${
+                            w.tierType === TIER_EXOTIC ? " exotic" : ""
+                          }`}
+                          src={`${BUNGIE_ROOT}${w.icon}`}
+                          alt=""
+                        />
+                      ) : (
+                        <div className="item-icon !w-11 !h-11" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">{w.name}</div>
+                        <div className="text-[11px] opacity-60 flex items-center gap-1 flex-wrap">
+                          <span className="uppercase">{w.typeName}</span>
+                          {w.damageName && (
+                            <span className="flex items-center">
+                              ·&nbsp;
+                              {w.damageIcon && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  className="damage-icon"
+                                  src={`${BUNGIE_ROOT}${w.damageIcon}`}
+                                  alt=""
+                                />
+                              )}
+                              {w.damageName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-mono text-[#ffd970]">
+                          {w.power > 0 ? w.power : "—"}
+                        </div>
+                        {w.tierType === TIER_EXOTIC && (
+                          <span className="badge badge-xs badge-primary">
+                            exotique
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {w.perks.length > 0 && (
+                      <div className="flex gap-1 flex-wrap">
+                        {w.perks.map((p, i) => (
+                          <span className="plug" key={i} title={p.name}>
+                            {p.icon ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={`${BUNGIE_ROOT}${p.icon}`} alt={p.name} />
+                            ) : null}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {w.mods.length > 0 && (
+                      <div className="text-[11px] opacity-60">
+                        {w.mods.map((m) => m.name).join(" · ")}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {holderBadge(w)}
+                      <div className="flex-1" />
+                      <button
+                        className="btn btn-xs btn-primary"
+                        disabled={busy || !selectedChar}
+                        onClick={() => handleEquip(w)}
+                      >
+                        Équiper
+                      </button>
+                      {loc?.characterId !== null && !loc?.equipped && (
+                        <button
+                          className="btn btn-xs btn-outline"
+                          disabled={busy}
+                          onClick={() => handleVault(w)}
+                        >
+                          Coffre
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {wide && (
       <div className="card bg-base-200 shadow">
         <div className="card-body p-2">
           <div className="overflow-x-auto">
@@ -639,6 +757,7 @@ export default function WeaponsPage() {
           </div>
         </div>
       </div>
+      )}
 
       <p className="text-xs opacity-50">
         Survole une icône de perk pour voir son nom. Les objets équipés sur un

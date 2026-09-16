@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import RaIcon from "@/components/RaIcon";
 import { BUNGIE_ROOT } from "@/lib/destiny-constants";
+import { ICONS } from "@/lib/rpg-icons";
 import { loadDefs } from "@/lib/manifest-client";
 import {
   allCurrencies,
@@ -111,20 +113,27 @@ export default function CurrencyBar({ enabled }: { enabled: boolean }) {
             </span>
           ))}
         </span>
-        <span className="text-xs opacity-50 lg:hidden">
-          {rows.length} monnaies
+        <span className="text-xs opacity-50 lg:hidden flex items-center gap-1">
+          <RaIcon icon={ICONS.currency} className="text-sm" />
+          <span className="hidden sm:inline">{rows.length} monnaies</span>
+          <span className="sm:hidden">{rows.length}</span>
         </span>
         <span className="text-[10px] opacity-40">▾</span>
       </div>
 
       <div
         tabIndex={0}
-        className="dropdown-content bg-base-200 rounded-box z-30 mt-1 w-80 p-2 shadow-lg ring-1 ring-base-content/10"
+        /*
+          Sur téléphone, le bouton n'est pas au bord de l'écran : un panneau
+          de 20 rem aligné sur lui déborderait à gauche. Il se cale donc sur
+          toute la largeur, juste sous la barre.
+        */
+        className="dropdown-content bg-base-200 rounded-box z-30 mt-1 w-80 p-2 shadow-lg ring-1 ring-base-content/10 max-sm:!fixed max-sm:!left-2 max-sm:!right-2 max-sm:!top-16 max-sm:!w-auto"
       >
         <div className="text-[11px] uppercase tracking-wider opacity-50 px-2 pb-1">
           Monnaies et matériaux
         </div>
-        <div className="max-h-[70vh] overflow-y-auto flex flex-col">
+        <div className="max-h-[70vh] max-sm:max-h-[calc(100dvh-7rem)] overflow-y-auto flex flex-col">
           {rows.map((c) => (
             <div
               key={c.itemHash}

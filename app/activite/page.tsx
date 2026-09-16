@@ -350,12 +350,12 @@ export default function ActivityPage() {
         )}
       </div>
 
-      <div role="tablist" className="tabs tabs-bordered">
+      <div role="tablist" className="tabs tabs-bordered tabs-scroll">
         {TABS.map(([value, label, icon]) => (
           <button
             key={value}
             role="tab"
-            className={`tab gap-2${tab === value ? " tab-active" : ""}`}
+            className={`tab gap-1.5 sm:gap-2 px-2.5 sm:px-4${tab === value ? " tab-active" : ""}`}
             onClick={() => setTab(value)}
           >
             <RaIcon icon={icon} className="text-base" />
@@ -543,7 +543,7 @@ function HistoryTab({
         </div>
       )}
 
-      <div className="flex justify-center gap-3 items-center">
+      <div className="flex justify-center gap-3 items-center flex-wrap text-center">
         {busy && <span className="loading loading-spinner loading-sm" />}
         {!exhausted && (
           <button className="btn btn-sm btn-outline" disabled={busy} onClick={onMore}>
@@ -569,7 +569,7 @@ function HistoryRow({
 }) {
   const style = familyStyle(row.family);
   return (
-    <div className="flex items-center gap-3 py-2 px-2 hover:bg-base-300/40 rounded">
+    <div className="flex items-center gap-2 sm:gap-3 py-2 px-1 sm:px-2 hover:bg-base-300/40 rounded">
       <RaIcon
         icon={style.icon}
         className={`text-2xl w-7 text-center shrink-0 ${style.color}`}
@@ -586,6 +586,9 @@ function HistoryRow({
           {row.standing === undefined && !row.completed && (
             <span className="text-warning">· abandonnée</span>
           )}
+          <span className="font-mono sm:hidden">
+            · {row.duration} · {row.kills}/{row.deaths}/{row.assists}
+          </span>
         </div>
       </div>
       <div className="text-right text-xs font-mono shrink-0 hidden sm:block">
@@ -644,7 +647,7 @@ function CareerTab({
         {career.highlights.map((stat) => (
           <div
             key={stat.label}
-            className="card bg-base-200 border border-base-300 shadow grow shrink basis-64 max-w-md"
+            className="card bg-base-200 border border-base-300 shadow grow shrink min-w-0 basis-64 sm:max-w-md"
           >
             <div className="card-body p-4 gap-1">
               <div className="text-xs uppercase tracking-wider opacity-50">
@@ -663,7 +666,7 @@ function CareerTab({
         {career.domains.map((domain) => (
           <div
             key={domain.key}
-            className="card bg-base-200 border border-base-300 shadow grow shrink basis-80 max-w-xl"
+            className="card bg-base-200 border border-base-300 shadow grow shrink min-w-0 basis-72 sm:basis-80 sm:max-w-xl"
           >
             <div className="card-body p-4 gap-3">
               <div className="flex items-center gap-2.5">
@@ -713,8 +716,8 @@ function CareerTab({
                     <tr>
                       <th>Activité</th>
                       <th className="text-right">Terminée</th>
-                      <th className="text-right">É / M</th>
-                      <th className="text-right">Temps passé</th>
+                      <th className="text-right hidden sm:table-cell">É / M</th>
+                      <th className="text-right hidden sm:table-cell">Temps passé</th>
                       <th className="text-right">Record</th>
                     </tr>
                   </thead>
@@ -726,14 +729,18 @@ function CareerTab({
                           {row.mode && (
                             <div className="text-xs opacity-60">{row.mode}</div>
                           )}
+                          <div className="text-xs opacity-60 font-mono sm:hidden">
+                            {formatPlaytime(row.playtimeSeconds)} · É/M{" "}
+                            {row.kills}/{row.deaths}
+                          </div>
                         </td>
                         <td className="text-right font-mono">
                           {row.completions} fois
                         </td>
-                        <td className="text-right font-mono">
+                        <td className="text-right font-mono hidden sm:table-cell">
                           {row.kills} / {row.deaths}
                         </td>
-                        <td className="text-right font-mono">
+                        <td className="text-right font-mono hidden sm:table-cell">
                           {formatPlaytime(row.playtimeSeconds)}
                         </td>
                         <td className="text-right font-mono">
@@ -826,9 +833,12 @@ function WeaponsTab({
                   <thead>
                     <tr>
                       <th>Arme</th>
-                      <th>Type</th>
-                      <th className="text-right">Éliminations</th>
-                      <th className="text-right">Par partie</th>
+                      <th className="hidden sm:table-cell">Type</th>
+                      <th className="text-right">
+                        <span className="sm:hidden">Élim.</span>
+                        <span className="hidden sm:inline">Éliminations</span>
+                      </th>
+                      <th className="text-right hidden sm:table-cell">Par partie</th>
                       <th className="text-right">Précision</th>
                     </tr>
                   </thead>
@@ -869,8 +879,11 @@ function WeaponsTab({
                   <thead>
                     <tr>
                       <th>Arme</th>
-                      <th>Type</th>
-                      <th className="text-right">Éliminations</th>
+                      <th className="hidden sm:table-cell">Type</th>
+                      <th className="text-right">
+                        <span className="sm:hidden">Élim.</span>
+                        <span className="hidden sm:inline">Éliminations</span>
+                      </th>
                       <th className="text-right">Précision</th>
                     </tr>
                   </thead>
@@ -880,7 +893,7 @@ function WeaponsTab({
                         <td>
                           <WeaponName weapon={weapon} />
                         </td>
-                        <td className="text-xs opacity-60 uppercase">
+                        <td className="text-xs opacity-60 uppercase hidden sm:table-cell">
                           {weapon.typeName}
                         </td>
                         <td className="text-right font-mono">{weapon.kills}</td>
@@ -902,18 +915,23 @@ function WeaponsTab({
 
 function WeaponName({ weapon }: { weapon: WeaponRow }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2 sm:gap-3">
       {weapon.icon ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          className="item-icon !w-10 !h-10"
+          className="item-icon !w-9 !h-9 sm:!w-10 sm:!h-10"
           src={`${BUNGIE_ROOT}${weapon.icon}`}
           alt=""
         />
       ) : (
-        <div className="item-icon !w-10 !h-10" />
+        <div className="item-icon !w-9 !h-9 sm:!w-10 sm:!h-10" />
       )}
-      <span className="font-medium">{weapon.name}</span>
+      <span className="min-w-0">
+        <span className="block font-medium">{weapon.name}</span>
+        <span className="block text-[11px] opacity-60 uppercase sm:hidden">
+          {weapon.typeName}
+        </span>
+      </span>
     </div>
   );
 }
@@ -924,9 +942,13 @@ function WeaponRowView({ weapon }: { weapon: RecentWeaponRow }) {
       <td>
         <WeaponName weapon={weapon} />
       </td>
-      <td className="text-xs opacity-60 uppercase">{weapon.typeName}</td>
+      <td className="text-xs opacity-60 uppercase hidden sm:table-cell">
+        {weapon.typeName}
+      </td>
       <td className="text-right font-mono">{weapon.kills}</td>
-      <td className="text-right font-mono">{weapon.killsPerGame}</td>
+      <td className="text-right font-mono hidden sm:table-cell">
+        {weapon.killsPerGame}
+      </td>
       <td className="text-right font-mono">{weapon.precisionRatio}</td>
     </tr>
   );
@@ -1059,7 +1081,7 @@ function ClanTab({
             <table className="table table-sm">
               <thead>
                 <tr>
-                  <th className="w-10">#</th>
+                  <th className="w-8 sm:w-10">#</th>
                   <th>Gardien</th>
                   <th className="text-right">{column.label}</th>
                 </tr>
@@ -1087,7 +1109,7 @@ function ClanTab({
                             title="En ligne"
                           />
                         )}
-                        <span>{member.name}</span>
+                        <span className="truncate">{member.name}</span>
                         {member.code !== undefined && (
                           <span className="opacity-40 text-xs">
                             #{String(member.code).padStart(4, "0")}
@@ -1171,8 +1193,8 @@ function ReportModal({
   }, [onClose]);
 
   return (
-    <div className="modal modal-open" role="dialog">
-      <div className="modal-box max-w-4xl">
+    <div className="modal modal-open modal-bottom sm:modal-middle" role="dialog">
+      <div className="modal-box max-w-4xl p-4 sm:p-6">
         {busy && (
           <div className="flex justify-center py-10">
             <span className="loading loading-spinner loading-lg text-primary" />
@@ -1185,7 +1207,7 @@ function ReportModal({
         )}
         {report && (
           <>
-            <h3 className="text-lg font-semibold">{report.name}</h3>
+            <h3 className="text-base sm:text-lg font-semibold">{report.name}</h3>
             <div className="text-xs opacity-60 mb-3">
               {report.mode} · {new Date(report.date).toLocaleString("fr-FR")} ·{" "}
               {report.duration}
@@ -1209,12 +1231,12 @@ function ReportModal({
                 <thead>
                   <tr>
                     <th>Joueur</th>
-                    <th>Classe</th>
-                    <th className="text-right">✦</th>
+                    <th className="hidden sm:table-cell">Classe</th>
+                    <th className="text-right hidden sm:table-cell">✦</th>
                     <th className="text-right">É / M / A</th>
                     <th className="text-right">K/D</th>
-                    <th className="text-right">Score</th>
-                    <th className="text-right">Temps</th>
+                    <th className="text-right hidden sm:table-cell">Score</th>
+                    <th className="text-right hidden sm:table-cell">Temps</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1232,15 +1254,27 @@ function ReportModal({
                             {player.clanTag}
                           </span>
                         )}
+                        <div className="text-[11px] opacity-60 sm:hidden">
+                          {player.className} · ✦ {player.light} · score{" "}
+                          {player.score} · {player.duration}
+                        </div>
                       </td>
-                      <td className="text-xs opacity-70">{player.className}</td>
-                      <td className="text-right font-mono">{player.light}</td>
+                      <td className="text-xs opacity-70 hidden sm:table-cell">
+                        {player.className}
+                      </td>
+                      <td className="text-right font-mono hidden sm:table-cell">
+                        {player.light}
+                      </td>
                       <td className="text-right font-mono">
                         {player.kills} / {player.deaths} / {player.assists}
                       </td>
                       <td className="text-right font-mono">{player.kd}</td>
-                      <td className="text-right font-mono">{player.score}</td>
-                      <td className="text-right font-mono">{player.duration}</td>
+                      <td className="text-right font-mono hidden sm:table-cell">
+                        {player.score}
+                      </td>
+                      <td className="text-right font-mono hidden sm:table-cell">
+                        {player.duration}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

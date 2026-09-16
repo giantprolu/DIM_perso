@@ -304,8 +304,8 @@ export default function ClanPage() {
             }}
           />
         )}
-        <div className="card-body p-5 gap-2">
-          <h1 className="text-2xl font-semibold">
+        <div className="card-body p-4 sm:p-5 gap-2">
+          <h1 className="text-xl sm:text-2xl font-semibold">
             {clan?.name}
             {clan?.clanInfo?.clanCallsign && (
               <span className="badge badge-outline badge-primary ml-2 align-middle">
@@ -340,7 +340,7 @@ export default function ClanPage() {
         <div className="card-body p-4 gap-3">
           <form className="flex gap-2 flex-wrap items-center" onSubmit={runSearch}>
             <input
-              className="input input-sm input-bordered flex-1 min-w-[220px]"
+              className="input input-sm input-bordered flex-1 min-w-0 basis-full sm:basis-auto sm:min-w-[220px]"
               placeholder="Chercher un Gardien : Nom ou Nom#1234"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -404,10 +404,11 @@ export default function ClanPage() {
       </div>
 
       {/*
-      {/*
         La liste tient à gauche, volontairement étroite : elle ne sert qu'à
         choisir. La fiche occupe la droite, où la place permet de montrer
-        l'écran personnage en grand plutôt qu'en vignette flottante.
+        l'écran personnage en grand plutôt qu'en vignette flottante. Sous
+        1024 px, il n'y a plus de droite : la fiche s'ouvre alors en plein
+        écran, sinon elle atterrirait sous une liste de cent membres.
       */}
       <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <div className="flex flex-col gap-3">
@@ -426,7 +427,7 @@ export default function ClanPage() {
           <div className="card bg-base-200 shadow">
             <div className="card-body p-2">
               {/* La liste défile seule : la fiche de droite reste en vue. */}
-              <div className="max-h-[calc(100vh-13rem)] overflow-y-auto">
+              <div className="lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto">
                 <table className="table table-zebra table-sm">
                   <thead>
                     <tr>
@@ -513,15 +514,34 @@ export default function ClanPage() {
           </div>
 
           <p className="text-xs opacity-50">
-            Clique un Gardien pour voir sa fiche à droite. Ce que Bungie
+            <span className="lg:hidden">Touche un Gardien pour ouvrir sa fiche.</span>
+            <span className="hidden lg:inline">
+              Clique un Gardien pour voir sa fiche à droite.
+            </span>{" "}
+            Ce que Bungie
             accepte de montrer dépend des réglages de confidentialité de
             chacun : un profil privé est signalé comme tel.
           </p>
         </div>
 
         {/* La fiche suit le défilement de la liste, sur grand écran. */}
-        <div className="card bg-base-200 shadow lg:sticky lg:top-20">
-          <div className="card-body p-4">
+        <div
+          className={`card bg-base-200 shadow lg:sticky lg:top-20 ${
+            picked
+              ? "max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:rounded-none max-lg:overflow-y-auto max-lg:overscroll-contain"
+              : "max-lg:hidden"
+          }`}
+          role={picked ? "dialog" : undefined}
+        >
+          <div className="card-body p-3 sm:p-4">
+            {picked && (
+              <button
+                className="btn btn-sm btn-ghost self-start -ml-1 lg:hidden"
+                onClick={() => setPicked(null)}
+              >
+                ← Retour au clan
+              </button>
+            )}
             {picked ? (
               <PlayerPanel
                 key={`${picked.membershipType}/${picked.membershipId}`}

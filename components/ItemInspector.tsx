@@ -59,6 +59,17 @@ const HOVER_DELAY_MS = 120;
 const CARD_WIDTH = 320;
 
 /**
+ * Un écran tactile simule un survol au toucher, puis ne le referme jamais :
+ * l'aperçu resterait collé par-dessus la page. Là, seul le clic compte.
+ */
+function canHover(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(hover: hover)").matches
+  );
+}
+
+/**
  * Instances déjà lues. Le survol d'un tableau d'armes déclencherait sinon
  * une requête par aller-retour de la souris.
  */
@@ -146,6 +157,7 @@ export function ItemInspectorProvider({ children }: { children: ReactNode }) {
   const show = useCallback(
     (target: InspectTarget, element: HTMLElement) => {
       if (timer.current) clearTimeout(timer.current);
+      if (!canHover()) return;
       ensureDefs();
       const rect = element.getBoundingClientRect();
       const anchor = {
@@ -367,7 +379,7 @@ function ItemModal({
 }) {
   return (
     <div
-      className="modal modal-open"
+      className="modal modal-open modal-bottom sm:modal-middle"
       role="dialog"
       aria-modal="true"
       style={{ zIndex: 1100 }}
@@ -382,14 +394,14 @@ function ItemModal({
           />
         )}
         <button
-          className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+          className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10 bg-base-100/60"
           onClick={onClose}
           aria-label="Fermer"
         >
           ✕
         </button>
         {info ? (
-          <div className="max-h-[70vh] overflow-y-auto">
+          <div className="max-h-[75vh] sm:max-h-[70vh] overflow-y-auto">
             <ItemInfoBody info={info} compact={false} />
           </div>
         ) : (
@@ -460,8 +472,8 @@ function ItemInfoBody({
   const stats = compact ? info.stats.slice(0, 7) : info.stats;
 
   return (
-    <div className={compact ? "p-3 flex flex-col gap-2" : "p-5 flex flex-col gap-4"}>
-      <div className="flex items-start gap-2.5">
+    <div className={compact ? "p-3 flex flex-col gap-2" : "p-4 sm:p-5 flex flex-col gap-4"}>
+      <div className={`flex items-start gap-2.5${compact ? "" : " pr-8"}`}>
         {info.icon && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
