@@ -42,8 +42,10 @@ function withClearedSlot(
   idx: number
 ): ProfileResponse | null {
   const slots = profile?.characterLoadouts?.data?.[charId]?.loadouts;
-  if (!profile || !slots?.[idx] || !slotIsUsed(slots[idx])) return profile;
-  const loadouts = slots.map((l, i) => (i === idx ? { ...l, items: [] } : l));
+  if (!profile || !slots?.[idx]) return profile;
+  const loadouts = slots.map((l, i) =>
+    i === idx ? { colorHash: 0, iconHash: 0, nameHash: 0, items: [] } : l
+  );
   return {
     ...profile,
     characterLoadouts: {
@@ -494,10 +496,18 @@ export default function LoadoutsPage() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
               {inGame.map((l, idx) => {
-                const used = slotIsUsed(l);
                 const icon = defs?.loadoutIcons?.[l.iconHash]?.iconImagePath;
                 const color = defs?.loadoutColors?.[l.colorHash]?.colorImagePath;
                 const slotName = defs?.loadoutNames?.[l.nameHash]?.name;
+                // Un slot compte dès qu'il a des objets OU une identité
+                // (nom, icône, couleur) : Bungie peut renvoyer des objets
+                // « 0 » pour un loadout pourtant visible en jeu.
+                const used = slotIsUsed(l) || Boolean(icon || color || slotName);
+                const itemCount =
+                  l.items?.filter(
+                    (i) => i.itemInstanceId && i.itemInstanceId !== "0"
+                  ).length ?? 0;
+                const deletable = used || slotIndex === idx;
                 return (
                   <div
                     key={idx}
@@ -507,7 +517,7 @@ export default function LoadoutsPage() {
                         : "border-base-300"
                     } ${used ? "bg-base-300" : "border-dashed opacity-70"}`}
                     onClick={() => setSlotIndex(idx)}
-                    title={`Slot ${idx + 1}${used ? "" : " (vide)"} — cliquer pour le cibler`}
+                    title={`Slot ${idx + 1}${used ? ` (${itemCount} objets)` : " (vide)"} — cliquer pour le cibler`}
                   >
                     <div className="relative w-12 h-12">
                       {used && color ? (
@@ -533,7 +543,7 @@ export default function LoadoutsPage() {
                       <span className="opacity-50">#{idx + 1}</span>{" "}
                       {used ? (slotName ?? "Loadout") : "Vide"}
                     </div>
-                    {used && confirmClear === idx && (
+                    {deletable && confirmClear === idx && (
                       <div
                         className="flex flex-col items-center gap-1"
                         onClick={(e) => e.stopPropagation()}
@@ -559,18 +569,20 @@ export default function LoadoutsPage() {
                         </div>
                       </div>
                     )}
-                    {used && confirmClear !== idx && (
+                    {deletable && confirmClear !== idx && (
                       <div className="flex flex-wrap justify-center gap-1">
-                        <button
-                          className="btn btn-xs btn-primary"
-                          disabled={busy}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            equipInGame(idx);
-                          }}
-                        >
-                          Équiper
-                        </button>
+                        {used && (
+                          <button
+                            className="btn btn-xs btn-primary"
+                            disabled={busy}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              equipInGame(idx);
+                            }}
+                          >
+                            Équiper
+                          </button>
+                        )}
                         <button
                           className="btn btn-xs btn-outline btn-error"
                           disabled={busy}
