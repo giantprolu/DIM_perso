@@ -133,29 +133,6 @@ export interface SeasonPassDef {
   prestigeProgressionHash?: number;
 }
 
-export interface LoadoutNameDef {
-  hash: number;
-  name?: string;
-  index?: number;
-}
-
-export interface LoadoutIconDef {
-  hash: number;
-  iconImagePath?: string;
-  index?: number;
-}
-
-export interface LoadoutColorDef {
-  hash: number;
-  colorImagePath?: string;
-  index?: number;
-}
-
-export interface LoadoutConstantsDef {
-  hash: number;
-  loadoutCountPerCharacter?: number;
-}
-
 export interface VendorDef {
   hash: number;
   displayProperties?: {
@@ -288,10 +265,6 @@ export interface Defs {
   seasonPasses: Record<string, SeasonPassDef>;
   guardianRanks: Record<string, GuardianRankDef>;
   plugSets: Record<string, PlugSetDef>;
-  loadoutNames: Record<string, LoadoutNameDef>;
-  loadoutIcons: Record<string, LoadoutIconDef>;
-  loadoutColors: Record<string, LoadoutColorDef>;
-  loadoutConstants: Record<string, LoadoutConstantsDef>;
   vendors: Record<string, VendorDef>;
   destinations: Record<string, DestinationDef>;
   places: Record<string, PlaceDef>;
@@ -357,18 +330,6 @@ export interface CharacterActivities {
   currentActivityModeType?: number;
   currentPlaylistActivityHash?: number;
   dateActivityStarted?: string;
-}
-
-export interface InGameLoadoutItem {
-  itemInstanceId?: string;
-  plugItemHashes?: number[];
-}
-
-export interface InGameLoadout {
-  colorHash: number;
-  iconHash: number;
-  nameHash: number;
-  items?: InGameLoadoutItem[];
 }
 
 export interface PlugSetsComponent {
@@ -494,9 +455,6 @@ export interface ProfileResponse {
   profilePlugSets?: { data?: PlugSetsComponent };
   /** Plugs débloqués par personnage */
   characterPlugSets?: { data?: Record<string, PlugSetsComponent> };
-  characterLoadouts?: {
-    data?: Record<string, { loadouts?: InGameLoadout[] }>;
-  };
   characterRecords?: {
     data?: Record<string, { records?: Record<string, RecordComponent> }>;
   };

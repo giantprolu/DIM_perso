@@ -89,15 +89,6 @@ export const pullFromPostmaster = (p: {
   stackSize?: number;
 }) => apiPost("/api/d2/postmaster", p);
 
-export const loadoutAction = (p: {
-  action: "snapshot" | "equip" | "clear" | "rename";
-  loadoutIndex: number;
-  characterId: string;
-  colorHash?: number;
-  iconHash?: number;
-  nameHash?: number;
-}) => apiPost("/api/d2/loadout", p);
-
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**

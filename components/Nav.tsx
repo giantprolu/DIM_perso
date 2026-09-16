@@ -18,7 +18,6 @@ const LINKS = [
   { href: "/postmaster", label: "Postes", icon: ICONS.postmaster },
   { href: "/marchands", label: "Marchands", icon: ICONS.vendor },
   { href: "/optimizer", label: "Optimiseur", icon: ICONS.optimizer },
-  { href: "/loadouts", label: "Loadouts", icon: ICONS.loadout },
   { href: "/clan", label: "Clan", icon: ICONS.clan },
 ];
 

@@ -90,12 +90,6 @@ const PAGES = [
     desc: "Assemblages d'armure et puissance maximale.",
   },
   {
-    href: "/loadouts",
-    icon: ICONS.loadout,
-    title: "Loadouts",
-    desc: "Enregistre un personnage complet, réapplique-le.",
-  },
-  {
     href: "/clan",
     icon: ICONS.clan,
     title: "Clan",
@@ -834,7 +828,7 @@ function SignedOut({ error }: { error: string | null }) {
           </h1>
           <p className="max-w-xl opacity-70">
             Ton armurerie Destiny 2 personnelle : puissance, jalons, arsenal et
-            loadouts complets — branchée en direct sur ton compte Bungie.
+            optimiseur d&apos;armure — branchée en direct sur ton compte Bungie.
           </p>
           <a className="btn btn-primary" href="/api/auth/login">
             Se connecter avec Bungie.net

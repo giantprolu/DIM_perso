@@ -9,9 +9,8 @@ const SCOPES: Record<string, string> = {
   // 301 objectifs d'items, 900 archives (défis, rangs),
   // 1200 variables de texte (les objectifs affichent « {var:…} » sans elles)
   quests: "100,200,201,301,900,1200",
-  // 102 coffre, 205 équipé, 206 loadouts en jeu, 300 instances,
-  // 304 stats, 305 sockets
-  gear: "102,200,201,205,206,300,304,305",
+  // 102 coffre, 205 équipé, 300 instances, 304 stats, 305 sockets
+  gear: "102,200,201,205,300,304,305",
   // 205 équipé, 310 mods disponibles par emplacement (léger : équipé seul)
   mods: "200,205,300,304,305,310",
   // Perso : équipé + coffre + inventaires, pour proposer les alternatives

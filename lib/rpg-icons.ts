@@ -238,7 +238,6 @@ export const ICONS = {
   character: "ra-player",
   weapon: "ra-revolver",
   armor: "ra-vest",
-  loadout: "ra-knight-helmet",
   optimizer: "ra-anvil",
   time: "ra-hourglass",
   reset: "ra-cycle",

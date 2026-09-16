@@ -28,15 +28,6 @@ l'essentiel :
   **simulation de 5 mods de stats (+10)**. Un guide intégré explique chaque
   filtre. Chaque build peut être **équipé en un clic** (transferts compris),
   avec pose automatique des mods suggérés.
-- **Loadouts** — enregistre un personnage complet (armes, armures, mods,
-  sous-classe avec aspects et fragments) puis réapplique-le : rapatriement
-  des objets depuis le coffre ou les autres personnages, équipement,
-  restauration des mods via `InsertSocketPlugFree`.
-- **Loadouts en jeu (Lightfall)** — visualise les slots du personnage
-  (icône, couleur, nom), équipe ou vide un slot, snapshot l'équipement
-  actuel, ou pousse un loadout du site dans un slot (application puis
-  `SnapshotLoadout`) : il apparaît directement dans le menu de personnage
-  en jeu.
 - **Clan** — le roster complet (toutes les pages, pas seulement les 50
   premiers), avec fiche détaillée au survol et au clic. Une **recherche par
   nom Bungie** (`Nom` ou `Nom#1234`) ouvre la même fiche pour n'importe quel
@@ -114,7 +105,7 @@ app/
   api/bungie/…      Proxys authentifiés — API key côté serveur
                     manifest · profile · weekly · activity · item ·
                     vendors · clan · player · search-player
-  api/d2/…          Actions en jeu (équiper, transférer, mods, loadouts…)
+  api/d2/…          Actions en jeu (équiper, transférer, mods…)
   semaine/          Jalons, rotation publique, réputations, artefact
   quests/           Suivi des poursuites par personnage
   activite/         Historique, rapports de fin de partie, statistiques

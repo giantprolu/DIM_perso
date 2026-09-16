@@ -66,8 +66,4 @@
   .action-log {
     @apply bg-base-300 border border-base-300 rounded-box px-4 py-3 text-xs my-3 max-h-56 overflow-y-auto font-mono leading-relaxed;
   }
-
-  .loadout-icons img {
-    @apply w-10 h-10 rounded-md border border-base-300;
-  }
 }

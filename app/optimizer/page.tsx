@@ -40,11 +40,6 @@ import {
   moveToCharacter,
   sleep,
 } from "@/lib/d2-actions";
-import {
-  captureEquippedLoadout,
-  loadLoadouts,
-  persistLoadouts,
-} from "@/lib/loadouts";
 import { instanceFromProfile } from "@/lib/item-info";
 import { useInspectItem } from "@/components/ItemInspector";
 import type {
@@ -189,7 +184,6 @@ export default function OptimizerPage() {
   const [busy, setBusy] = useState(false);
   const inspect = useInspectItem();
   const [log, setLog] = useState<string[]>([]);
-  const [saveAsLoadout, setSaveAsLoadout] = useState(true);
   const [mainTab, setMainTab] = useState<"builds" | "mods">("builds");
 
   useEffect(() => {
@@ -358,7 +352,7 @@ export default function OptimizerPage() {
     setLog((prev) => [...prev.slice(-40), m]);
   }
 
-  async function applyBuild(b: Build, withMods: boolean, nameOverride?: string) {
+  async function applyBuild(b: Build, withMods: boolean) {
     if (!defs || !targetChar || busy) return;
     setBusy(true);
     setLog([]);
@@ -557,37 +551,12 @@ export default function OptimizerPage() {
         }
       }
 
-      if (saveAsLoadout) {
-        pushLog("💾 Enregistrement du loadout…");
-        await sleep(300);
-        let finalProfile: ProfileResponse | null = null;
-        try {
-          finalProfile = await fetchProfileFresh("gear");
-        } catch {
-          finalProfile = null;
-        }
-        if (finalProfile) {
-          setProfile(finalProfile);
-          const total = b.totals.reduce((a, v) => a + v, 0);
-          const exoticName =
-            b.pieceIds
-              .map((id) => pieceById.get(id))
-              .find((p) => p?.isExotic)?.name ?? "légendaire";
-          const loadout = captureEquippedLoadout(
-            defs,
-            finalProfile,
-            targetChar,
-            selectedClass,
-            nameOverride ??
-              `Optimiseur · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ${total} pts`
-          );
-          persistLoadouts([loadout, ...loadLoadouts()]);
-          pushLog(
-            `💾 Loadout « ${loadout.name} » enregistré — retrouve-le dans l'onglet Loadouts.`
-          );
-        } else {
-          pushLog("⚠️ Loadout non enregistré (profil illisible après équipement).");
-        }
+      // Profil relu pour que la liste reflète le nouvel équipement
+      await sleep(300);
+      try {
+        setProfile(await fetchProfileFresh("gear"));
+      } catch {
+        // relecture facultative
       }
       pushLog("✅ Terminé — ton personnage aura cet équipement en jeu.");
     } catch (e) {
@@ -696,9 +665,6 @@ export default function OptimizerPage() {
 
   async function equipPowerBuild(row: PowerRow, withMods: boolean) {
     const { pb, base, mods, finalTotals } = row;
-    const exoticName =
-      pb.pieceIds.map((id) => pieceById.get(id)).find((p) => p?.isExotic)?.name ??
-      "légendaire";
     await applyBuild(
       {
         pieceIds: pb.pieceIds,
@@ -707,8 +673,7 @@ export default function OptimizerPage() {
         score: pb.totalPower,
         power: pb.totalPower,
       },
-      withMods,
-      `Puissance · ${CLASS_NAMES[selectedClass]} · ${exoticName} · ✦ ${pb.totalPower}`
+      withMods
     );
     // La Puissance actuelle vient de changer : on invalide la liste pour ne
     // jamais proposer un assemblage désormais inférieur au nouveau score.
@@ -1525,17 +1490,6 @@ export default function OptimizerPage() {
                           </tbody>
                         </table>
                       </div>
-                      <label className="label cursor-pointer justify-start sm:justify-end gap-2 py-0">
-                        <span className="label-text text-xs opacity-70">
-                          💾 Enregistrer en loadout après équipement
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={saveAsLoadout}
-                          onChange={(e) => setSaveAsLoadout(e.target.checked)}
-                          className="checkbox checkbox-primary checkbox-xs"
-                        />
-                      </label>
                       <div className="card-actions justify-end [&>.btn]:grow sm:[&>.btn]:grow-0">
                         {simulateMods && sel.mods.some((n) => n > 0) && (
                           <button
