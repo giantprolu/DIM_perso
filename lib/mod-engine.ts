@@ -100,14 +100,38 @@ function isInsertablePlug(
   return category.startsWith(ARMOR_MOD_CATEGORY_PREFIX);
 }
 
-export function isEmptyPlug(defs: Defs, plugHash: number): boolean {
-  const name = defs.items[plugHash]?.displayProperties?.name ?? "";
-  const category = defs.items[plugHash]?.plug?.plugCategoryIdentifier ?? "";
+/**
+ * Le plug est-il un emplacement vide ?
+ *
+ * Le nom seul ne suffit pas : l'armure actuelle dit « Emplacement de mod
+ * vide », que l'ancien motif « emplacement vide » ne reconnaissait pas. Les
+ * quatre emplacements passaient alors pour occupés par un même vrai mod, et
+ * la règle « un mod par pièce » rendait toute combinaison illégale — d'où
+ * « déjà optimal » sur des pièces entièrement vides.
+ *
+ * Plus sûr que le texte : le plug que le manifest pose d'origine dans
+ * l'emplacement, quand il n'apporte ni stat ni coût, EST l'emplacement vide.
+ */
+export function isEmptyPlug(
+  defs: Defs,
+  plugHash: number,
+  initialPlugHash?: number
+): boolean {
+  const def = defs.items[plugHash];
+  const name = def?.displayProperties?.name ?? "";
+  const category = def?.plug?.plugCategoryIdentifier ?? "";
+  if (
+    plugHash === initialPlugHash &&
+    plugEnergyCost(defs, plugHash) === 0 &&
+    !(def?.investmentStats ?? []).some((s) => s.value !== 0)
+  ) {
+    return true;
+  }
   return (
     name === "" ||
-    /emplacement vide|empty (mod )?socket/i.test(name) ||
+    /emplacement.*vide|empty (mod )?socket/i.test(name) ||
     category.endsWith("empty") ||
-    category.endsWith("_empty")
+    category.endsWith(".none")
   );
 }
 
@@ -239,13 +263,16 @@ function optionsFor(
     characterId
   );
 
+  const initialPlugHash =
+    defs.items[itemHash]?.sockets?.socketEntries?.[socketIndex]
+      ?.singleInitialItemHash;
   const seen = new Set<number>();
   const options: PlugOption[] = [];
   for (const { hash, canInsert } of hashes) {
     if (seen.has(hash)) continue;
     seen.add(hash);
     const def = defs.items[hash];
-    if (!def || isEmptyPlug(defs, hash)) continue;
+    if (!def || isEmptyPlug(defs, hash, initialPlugHash)) continue;
     // Inutile de proposer ce que Bungie refusera d'insérer
     if (!isInsertablePlug(defs, hash, isWeapon)) continue;
     options.push({
@@ -331,7 +358,14 @@ export function buildItemModContext(opts: {
       currentEffects: currentPlugHash
         ? plugEffects(defs, currentPlugHash, relevantStats, isWeapon)
         : [],
-      isEmpty: !currentPlugHash || isEmptyPlug(defs, currentPlugHash),
+      isEmpty:
+        !currentPlugHash ||
+        isEmptyPlug(
+          defs,
+          currentPlugHash,
+          defs.items[itemHash]?.sockets?.socketEntries?.[socketIndex]
+            ?.singleInitialItemHash
+        ),
       options,
     });
   }
@@ -685,7 +719,16 @@ export function bestModCombo(opts: {
   let nodes = 0;
 
   const pick: Candidate[] = new Array(perSocket.length);
-  const used = new Set<number>();
+  /*
+   * Unicité d'un mod sur la pièce. Garder l'état actuel reste TOUJOURS
+   * légal : deux emplacements qui gardent le même plug ne se gênent pas (le
+   * jeu les a déjà ainsi). Seul un mod nouvellement posé ne peut ni doublonner
+   * un autre posé, ni un mod gardé ailleurs.
+   */
+  const placed = new Map<number, number>();
+  const kept = new Map<number, number>();
+  const bump = (m: Map<number, number>, h: number, d: number) =>
+    m.set(h, (m.get(h) ?? 0) + d);
   // L'exploration raisonne sur le cumul : les rendements déjà entamés par
   // les pièces précédentes pèsent sur les choix de celle-ci.
   const totals = [...acquired];
@@ -729,13 +772,18 @@ export function bestModCombo(opts: {
     for (let k = twinOfPrev[i] ? minIndex : 0; k < list.length; k++) {
       const c = list[k];
       if (cost + c.energyCost > budget) continue;
-      if (c.unique && used.has(c.hash)) continue;
-      if (c.unique) used.add(c.hash);
+      if (c.unique) {
+        const clash = c.keep
+          ? (placed.get(c.hash) ?? 0) > 0
+          : (placed.get(c.hash) ?? 0) + (kept.get(c.hash) ?? 0) > 0;
+        if (clash) continue;
+        bump(c.keep ? kept : placed, c.hash, 1);
+      }
       for (let j = 0; j < totals.length; j++) totals[j] += c.gains[j];
       pick[i] = c;
       dfs(i + 1, cost + c.energyCost, k);
       for (let j = 0; j < totals.length; j++) totals[j] -= c.gains[j];
-      if (c.unique) used.delete(c.hash);
+      if (c.unique) bump(c.keep ? kept : placed, c.hash, -1);
     }
   };
   dfs(0, 0, 0);

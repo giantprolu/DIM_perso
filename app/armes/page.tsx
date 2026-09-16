@@ -151,7 +151,7 @@ export default function WeaponsPage() {
           if (!st?.plugHash || st.isVisible === false) continue;
           const plugDef = d.items[st.plugHash];
           const name = plugDef?.displayProperties?.name;
-          if (!name || name === "Emplacement vide") continue;
+          if (!name || /emplacement.*vide/i.test(name)) continue;
           plugs.push({ name, icon: plugDef?.displayProperties?.icon });
         }
         return plugs;
