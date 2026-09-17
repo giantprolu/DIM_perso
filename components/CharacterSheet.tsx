@@ -18,9 +18,8 @@ import {
  * L'écran Personnage du jeu, partagé par l'onglet Perso et la fiche clan.
  *
  * Armes à gauche, le Gardien et ses statistiques au centre, l'armure à
- * droite. Sur téléphone, le Gardien passe en tête et les deux colonnes
- * d'équipement deviennent deux rangées : côte à côte, elles ne laisseraient
- * au centre que la moitié de l'écran.
+ * droite — la disposition du jeu, gardée même sur téléphone : les cases
+ * rétrécissent et le centre se resserre plutôt que de tout empiler.
  *
  * Le contenu de chaque case est confié à la page (`renderSlot`) : l'onglet
  * Perso y branche l'échange d'équipement, la fiche clan la seule inspection.
@@ -46,7 +45,7 @@ export function GearTile({
   item: GearTileItem | undefined;
   selected?: boolean;
 } & ComponentPropsWithoutRef<"button">) {
-  const size = "w-12 h-12 sm:w-14 sm:h-14";
+  const size = "w-12 h-12 md:w-14 md:h-14";
   if (!item) {
     return (
       <button
@@ -137,9 +136,9 @@ export default function CharacterSheet({
           : { backgroundColor: "rgba(20,24,31,.5)" }
       }
     >
-      <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-12 p-3 sm:p-6">
-        <div className="flex flex-row md:flex-col gap-2 md:gap-2.5 order-2 md:order-1">
-          <div className="mr-1.5 md:mr-0 md:mb-1">
+      <div className="flex items-start justify-between md:justify-center gap-2 sm:gap-3 md:gap-12 p-2 sm:p-3 md:p-6">
+        <div className="flex flex-col gap-2 md:gap-2.5 shrink-0">
+          <div className="mb-0.5 md:mb-1">
             {renderSlot(BUCKET_SUBCLASS, "left")}
           </div>
           {WEAPON_SLOT_ORDER.map((b) => (
@@ -147,19 +146,19 @@ export default function CharacterSheet({
           ))}
         </div>
 
-        <div className="flex flex-col items-center gap-3 order-1 md:order-2 w-full max-w-xs md:w-auto md:max-w-none md:min-w-56 py-2">
-          <div className="text-xs tracking-[0.3em] uppercase opacity-60 text-center">
+        <div className="flex flex-col items-center gap-1 md:gap-3 min-w-0 flex-1 md:flex-none md:min-w-56 px-1 md:py-2">
+          <div className="text-[10px] md:text-xs tracking-[0.2em] md:tracking-[0.3em] uppercase opacity-60 text-center">
             {heading}
           </div>
           <div className="flex items-start gap-1">
-            <span className="text-[#ffd970] text-2xl leading-none mt-2">
+            <span className="text-[#ffd970] text-base md:text-2xl leading-none mt-1.5 md:mt-2">
               ✦
             </span>
-            <span className="text-5xl sm:text-6xl font-light text-[#ffd970] leading-none">
+            <span className="text-4xl md:text-6xl font-light text-[#ffd970] leading-none">
               {light}
             </span>
           </div>
-          <div className="text-[10px] tracking-[0.25em] uppercase opacity-50">
+          <div className="hidden md:block text-[10px] tracking-[0.25em] uppercase opacity-50">
             Puissance
           </div>
           {title && (
@@ -173,12 +172,12 @@ export default function CharacterSheet({
             </div>
           )}
 
-          <div className="w-full flex flex-col gap-1.5 mt-2">
+          <div className="w-full flex flex-col gap-1 md:gap-1.5 mt-2">
             {ARMOR_STAT_HASHES.map((h, i) => {
               const v = stats[i] ?? 0;
               return (
-                <div key={h} className="flex items-center gap-2">
-                  <span className="text-[11px] w-20 opacity-70 truncate">
+                <div key={h} className="flex items-center gap-1.5 md:gap-2">
+                  <span className="text-[11px] w-14 sm:w-20 opacity-70 truncate">
                     {statNames[i]}
                   </span>
                   <progress
@@ -186,7 +185,7 @@ export default function CharacterSheet({
                     value={Math.min(v, STAT_CAP)}
                     max={STAT_CAP}
                   />
-                  <span className="text-[11px] font-mono w-8 text-right tabular-nums">
+                  <span className="text-[11px] font-mono w-7 md:w-8 text-right tabular-nums">
                     {v}
                   </span>
                 </div>
@@ -195,7 +194,7 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        <div className="flex flex-row md:flex-col gap-2 md:gap-2.5 order-3">
+        <div className="flex flex-col gap-2 md:gap-2.5 shrink-0">
           {ARMOR_SLOT_ORDER.map((b) => (
             <div key={b}>{renderSlot(b, "right")}</div>
           ))}
