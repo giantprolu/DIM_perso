@@ -6,7 +6,6 @@ import {
   ARMOR_SLOT_ORDER,
   ARMOR_STAT_HASHES,
   BUNGIE_ROOT,
-  CLASS_NAMES,
   WEAPON_SLOT_ORDER,
 } from "@/lib/destiny-constants";
 import {
@@ -15,6 +14,7 @@ import {
   type VendorSummary,
 } from "@/lib/vendor-engine";
 import { useInspectItem } from "@/components/ItemInspector";
+import CharacterPicker from "@/components/CharacterPicker";
 import type {
   Character,
   Defs,
@@ -330,27 +330,11 @@ export default function MarchandsPage() {
         marchand et ce que ça te coûte.
       </p>
 
-      <div className="char-row">
-        {characters.map((c) => (
-          <button
-            key={c.characterId}
-            className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
-            style={
-              c.emblemBackgroundPath
-                ? {
-                    backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
-                  }
-                : undefined
-            }
-            onClick={() => switchCharacter(c.characterId)}
-          >
-            <div className="char-class">
-              {CLASS_NAMES[c.classType] ?? "Gardien"}
-            </div>
-            <div className="char-light">✦ {c.light}</div>
-          </button>
-        ))}
-      </div>
+      <CharacterPicker
+        characters={characters}
+        selected={selectedChar}
+        onSelect={switchCharacter}
+      />
 
       {error && (
         <div role="alert" className="alert alert-warning text-sm">

@@ -6,7 +6,6 @@ import {
   ARMOR_SLOT_ORDER,
   ARMOR_STAT_HASHES,
   BUNGIE_ROOT,
-  CLASS_NAMES,
   SOCKET_CATEGORY_ARMOR_MODS,
   SOCKET_CATEGORY_WEAPON_MODS,
   TIER_EXOTIC,
@@ -29,6 +28,7 @@ import { applyModCombo } from "@/lib/mod-apply";
 import { fetchItemSockets, fetchProfileFresh, sleep } from "@/lib/d2-actions";
 import { instanceFromProfile } from "@/lib/item-info";
 import { useInspectItem } from "@/components/ItemInspector";
+import CharacterPicker from "@/components/CharacterPicker";
 import type { Character, Defs, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
@@ -419,27 +419,11 @@ export default function ModsPanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="char-row">
-        {characters.map((c) => (
-          <button
-            key={c.characterId}
-            className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
-            style={
-              c.emblemBackgroundPath
-                ? {
-                    backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
-                  }
-                : undefined
-            }
-            onClick={() => setSelectedChar(c.characterId)}
-          >
-            <div className="char-class">
-              {CLASS_NAMES[c.classType] ?? "Gardien"}
-            </div>
-            <div className="char-light">✦ {c.light}</div>
-          </button>
-        ))}
-      </div>
+      <CharacterPicker
+        characters={characters}
+        selected={selectedChar}
+        onSelect={setSelectedChar}
+      />
 
       <div role="tablist" className="tabs tabs-boxed w-fit tabs-scroll">
         <a

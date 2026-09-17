@@ -10,6 +10,7 @@ import {
 } from "@/lib/destiny-constants";
 import { pullFromPostmaster, sleep } from "@/lib/d2-actions";
 import { useInspectItem } from "@/components/ItemInspector";
+import CharacterPicker from "@/components/CharacterPicker";
 import type { Character, Defs, ProfileResponse } from "@/lib/types";
 
 type Phase = "loading" | "ready" | "unauth" | "error";
@@ -293,35 +294,19 @@ export default function PostmasterPage() {
         </span>
       </div>
 
-      <div className="char-row">
-        {characters.map((c) => {
+      <CharacterPicker
+        characters={characters}
+        selected={selectedChar}
+        onSelect={setSelectedChar}
+        badge={(c) => {
           const count = itemsByChar.get(c.characterId)?.length ?? 0;
-          return (
-            <button
-              key={c.characterId}
-              className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
-              style={
-                c.emblemBackgroundPath
-                  ? {
-                      backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
-                    }
-                  : undefined
-              }
-              onClick={() => setSelectedChar(c.characterId)}
-            >
-              <div className="char-class">
-                {CLASS_NAMES[c.classType] ?? "Gardien"}
-                {count > 0 && (
-                  <span className="badge badge-primary badge-xs align-middle absolute top-1 right-1 sm:static sm:ml-2">
-                    {count}
-                  </span>
-                )}
-              </div>
-              <div className="char-light">✦ {c.light}</div>
-            </button>
-          );
-        })}
-      </div>
+          return count > 0 ? (
+            <span className="badge badge-primary badge-xs align-middle absolute top-1 right-1 sm:static sm:ml-2">
+              {count}
+            </span>
+          ) : null;
+        }}
+      />
 
       {nearlyFull && (
         <div role="alert" className="alert alert-warning text-sm">

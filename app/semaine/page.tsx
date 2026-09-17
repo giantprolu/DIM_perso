@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { loadDefs } from "@/lib/manifest-client";
-import { BUNGIE_ROOT, CLASS_NAMES } from "@/lib/destiny-constants";
+import { BUNGIE_ROOT } from "@/lib/destiny-constants";
+import CharacterPicker from "@/components/CharacterPicker";
 import { readStringVariables, type StringVariables } from "@/lib/string-variables";
 import {
   CADENCES,
@@ -455,25 +456,11 @@ export default function WeeklyPage() {
         </span>
       </div>
 
-      <div className="char-row">
-        {characters.map((c) => (
-          <button
-            key={c.characterId}
-            className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
-            style={
-              c.emblemBackgroundPath
-                ? {
-                    backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
-                  }
-                : undefined
-            }
-            onClick={() => setSelectedChar(c.characterId)}
-          >
-            <div className="char-class">{CLASS_NAMES[c.classType] ?? "Gardien"}</div>
-            <div className="char-light">✦ {c.light}</div>
-          </button>
-        ))}
-      </div>
+      <CharacterPicker
+        characters={characters}
+        selected={selectedChar}
+        onSelect={setSelectedChar}
+      />
 
       {(seasonPass || artifact) && (
         <div className="flex flex-wrap items-stretch gap-4">

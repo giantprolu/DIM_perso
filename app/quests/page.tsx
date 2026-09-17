@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
+import CharacterPicker from "@/components/CharacterPicker";
 import {
   BUCKET_PURSUITS,
   BUNGIE_ROOT,
@@ -694,27 +695,11 @@ export default function QuestsPage() {
         </span>
       </div>
 
-      <div className="char-row">
-        {characters.map((c) => (
-          <button
-            key={c.characterId}
-            className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
-            style={
-              c.emblemBackgroundPath
-                ? {
-                    backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
-                  }
-                : undefined
-            }
-            onClick={() => setSelectedChar(c.characterId)}
-          >
-            <div className="char-class">
-              {CLASS_NAMES[c.classType] ?? "Gardien"}
-            </div>
-            <div className="char-light">✦ {c.light}</div>
-          </button>
-        ))}
-      </div>
+      <CharacterPicker
+        characters={characters}
+        selected={selectedChar}
+        onSelect={setSelectedChar}
+      />
 
       {trackError && (
         <div role="alert" className="alert alert-warning text-sm">

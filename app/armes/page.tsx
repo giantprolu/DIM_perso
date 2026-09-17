@@ -22,6 +22,7 @@ import {
 import { findDuplicates, type DuplicateGroup } from "@/lib/item-detail";
 import { instanceFromProfile } from "@/lib/item-info";
 import { useInspectItem } from "@/components/ItemInspector";
+import CharacterPicker from "@/components/CharacterPicker";
 import { useIsWide } from "@/lib/use-media";
 import type {
   Character,
@@ -365,27 +366,11 @@ export default function WeaponsPage() {
         </span>
       </div>
 
-      <div className="char-row">
-        {characters.map((c) => (
-          <button
-            key={c.characterId}
-            className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
-            style={
-              c.emblemBackgroundPath
-                ? {
-                    backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
-                  }
-                : undefined
-            }
-            onClick={() => setSelectedChar(c.characterId)}
-          >
-            <div className="char-class">
-              {CLASS_NAMES[c.classType] ?? "Gardien"}
-            </div>
-            <div className="char-light">✦ {c.light}</div>
-          </button>
-        ))}
-      </div>
+      <CharacterPicker
+        characters={characters}
+        selected={selectedChar}
+        onSelect={setSelectedChar}
+      />
 
       <div role="alert" className="alert alert-info py-2 text-xs sm:text-sm">
         <span>

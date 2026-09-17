@@ -7,12 +7,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ARMOR_BUCKETS,
-  ARMOR_SLOT_ORDER,
   ARMOR_STAT_HASHES,
+  BUCKET_SUBCLASS,
   BUNGIE_ROOT,
-  STAT_CAP,
   WEAPON_BUCKETS,
-  WEAPON_SLOT_ORDER,
 } from "@/lib/destiny-constants";
 import {
   PLATFORM_NAMES,
@@ -22,21 +20,20 @@ import {
   fetchPlayer,
   formatPlaytime,
   summarizePlayer,
-  type CharacterView,
-  type EquippedItem,
   type PlayerData,
 } from "@/lib/player-client";
 import { instanceFromProfile } from "@/lib/item-info";
 import { useInspectItem } from "@/components/ItemInspector";
+import CharacterPicker from "@/components/CharacterPicker";
+import CharacterSheet, { GearTile, gearPower } from "@/components/CharacterSheet";
 import type { Defs } from "@/lib/types";
 
 /**
  * Fiche d'un Gardien, en grand.
  *
- * C'est l'écran Personnage du jeu : armes à gauche, le Gardien et ses
- * statistiques au centre, l'armure à droite — la disposition qu'on connaît
- * déjà, pour qu'un coup d'œil suffise. Chaque pièce est inspectable, si bien
- * que la fiche d'objet complète reste à un survol.
+ * C'est le même écran Personnage que l'onglet Perso (`CharacterSheet`) : la
+ * disposition qu'on connaît déjà, pour qu'un coup d'œil suffise. Chaque pièce
+ * est inspectable, si bien que la fiche d'objet complète reste à un survol.
  *
  * Le panneau se charge lui-même, avec le cache de `player-client` : revenir
  * sur un Gardien déjà consulté ne relit rien. Le profil demandé est le
@@ -57,151 +54,9 @@ export interface PlayerTarget {
 
 function slotName(bucketHash: number): string {
   return (
-    WEAPON_BUCKETS[bucketHash] ?? ARMOR_BUCKETS[bucketHash] ?? "Emplacement"
-  );
-}
-
-/** Une case d'équipement : icône, bordure exotique, puissance en coin. */
-function Slot({
-  item,
-  profile,
-  inspect,
-}: {
-  item: EquippedItem | undefined;
-  profile: PlayerData | null;
-  inspect: ReturnType<typeof useInspectItem>;
-}) {
-  if (!item) {
-    return (
-      <div className="w-12 h-12 rounded bg-base-100/30 border border-base-content/10" />
-    );
-  }
-  return (
-    <div
-      {...inspect({
-        itemHash: item.itemHash,
-        instanceId: item.instanceId,
-        instance: instanceFromProfile(profile?.profile, item.instanceId),
-      })}
-      title={item.name}
-      className={`relative w-12 h-12 rounded overflow-hidden border cursor-pointer ${
-        item.isExotic ? "border-[#ceae33]" : "border-base-content/15"
-      }`}
-    >
-      {item.icon ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={`${BUNGIE_ROOT}${item.icon}`}
-          alt={item.name}
-          className="w-full h-full"
-        />
-      ) : (
-        <span className="block w-full h-full bg-base-100/30" />
-      )}
-      {item.power > 0 && (
-        <span className="absolute bottom-0 right-0 bg-black/75 text-[10px] font-mono px-0.5 text-[#ffd970]">
-          {item.power}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** L'écran personnage : armes, Gardien, armure. */
-function CharacterScreen({
-  character,
-  gear,
-  statNames,
-  profile,
-  inspect,
-}: {
-  character: CharacterView;
-  gear: EquippedItem[] | null;
-  statNames: string[];
-  profile: PlayerData | null;
-  inspect: ReturnType<typeof useInspectItem>;
-}) {
-  const byBucket = new Map((gear ?? []).map((i) => [i.bucketHash, i]));
-
-  return (
-    <div
-      className="rounded-box overflow-hidden bg-cover bg-center"
-      style={
-        character.emblemBackgroundPath
-          ? {
-              backgroundImage: `linear-gradient(to bottom, rgba(20,24,31,.78), rgba(20,24,31,.95)), url(${BUNGIE_ROOT}${character.emblemBackgroundPath})`,
-            }
-          : { backgroundColor: "rgba(20,24,31,.5)" }
-      }
-    >
-      <div className="flex items-start justify-between gap-2 sm:gap-3 p-2 sm:p-3">
-        <div className="flex flex-col gap-2">
-          {WEAPON_SLOT_ORDER.map((b) => (
-            <Slot
-              key={b}
-              item={byBucket.get(b)}
-              profile={profile}
-              inspect={inspect}
-            />
-          ))}
-        </div>
-
-        <div className="flex flex-col items-center gap-1 min-w-0 flex-1 px-1">
-          <div className="text-[10px] tracking-[0.2em] uppercase opacity-60 truncate">
-            {character.className}
-            {character.raceName && ` · ${character.raceName}`}
-          </div>
-          <div className="flex items-start gap-1">
-            <span className="text-[#ffd970] text-base leading-none mt-1.5">
-              ✦
-            </span>
-            <span className="text-4xl sm:text-5xl font-light text-[#ffd970] leading-none">
-              {character.light}
-            </span>
-          </div>
-          {character.title && (
-            <div className="text-xs italic opacity-60 truncate max-w-full">
-              {character.title}
-            </div>
-          )}
-
-          <div className="w-full flex flex-col gap-1 mt-2">
-            {character.stats.map((v, i) => (
-              <div key={ARMOR_STAT_HASHES[i]} className="flex items-center gap-1.5 sm:gap-2">
-                <span className="text-[11px] w-14 sm:w-20 opacity-70 truncate">
-                  {statNames[i]}
-                </span>
-                <progress
-                  className="progress progress-primary h-1.5 flex-1"
-                  value={Math.min(v, STAT_CAP)}
-                  max={STAT_CAP}
-                />
-                <span className="text-[11px] font-mono w-7 text-right tabular-nums">
-                  {v}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {ARMOR_SLOT_ORDER.map((b) => (
-            <Slot
-              key={b}
-              item={byBucket.get(b)}
-              profile={profile}
-              inspect={inspect}
-            />
-          ))}
-        </div>
-      </div>
-
-      {gear === null && (
-        <div className="text-[11px] opacity-50 px-3 pb-2">
-          Équipement gardé privé.
-        </div>
-      )}
-    </div>
+    WEAPON_BUCKETS[bucketHash] ??
+    ARMOR_BUCKETS[bucketHash] ??
+    (bucketHash === BUCKET_SUBCLASS ? "Sous-classe" : "Emplacement")
   );
 }
 
@@ -360,32 +215,56 @@ export default function PlayerPanel({
         </div>
       )}
 
-      {characters.length > 1 && (
-        <div role="tablist" className="tabs tabs-boxed tabs-sm tabs-scroll">
-          {characters.map((c) => (
-            <a
-              key={c.characterId}
-              role="tab"
-              className={`tab${
-                c.characterId === character?.characterId ? " tab-active" : ""
-              }`}
-              onClick={() => setCharId(c.characterId)}
-            >
-              {c.className} · ✦ {c.light}
-            </a>
-          ))}
-        </div>
+      {characters.length > 0 && (
+        <CharacterPicker
+          characters={characters}
+          selected={character?.characterId}
+          onSelect={setCharId}
+        />
       )}
 
       {character && (
         <>
-          <CharacterScreen
-            character={character}
-            gear={gear}
+          <CharacterSheet
+            heading={
+              character.raceName
+                ? `${character.className} · ${character.raceName}`
+                : character.className
+            }
+            title={character.title}
+            light={character.light}
+            equipmentPower={gearPower(
+              (b) => gear?.find((i) => i.bucketHash === b)?.power
+            )}
+            stats={character.stats}
             statNames={statNames}
-            profile={data}
-            inspect={inspect}
-          />
+            emblemBackgroundPath={character.emblemBackgroundPath}
+            renderSlot={(bucket) => {
+              const item = gear?.find((i) => i.bucketHash === bucket);
+              return (
+                <GearTile
+                  item={item}
+                  disabled={!item}
+                  {...inspect(
+                    item && {
+                      itemHash: item.itemHash,
+                      instanceId: item.instanceId,
+                      instance: instanceFromProfile(
+                        data?.profile,
+                        item.instanceId
+                      ),
+                    }
+                  )}
+                />
+              );
+            }}
+          >
+            {gear === null && (
+              <div className="text-[11px] opacity-50 px-3 pb-2">
+                Équipement gardé privé.
+              </div>
+            )}
+          </CharacterSheet>
 
           <div className="flex flex-wrap items-center gap-3 text-xs opacity-70">
             {character.level !== undefined && (

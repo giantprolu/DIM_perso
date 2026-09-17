@@ -1,6 +1,7 @@
 import {
   ARMOR_SLOT_ORDER,
   ARMOR_STAT_HASHES,
+  BUCKET_SUBCLASS,
   CLASS_NAMES,
   TIER_EXOTIC,
   WEAPON_SLOT_ORDER,
@@ -255,7 +256,7 @@ export function equippedItems(
   const instances = data.profile.itemComponents?.instances?.data ?? {};
   const socketsData = data.profile.itemComponents?.sockets?.data ?? {};
 
-  const order = [...WEAPON_SLOT_ORDER, ...ARMOR_SLOT_ORDER];
+  const order = [BUCKET_SUBCLASS, ...WEAPON_SLOT_ORDER, ...ARMOR_SLOT_ORDER];
   const out: EquippedItem[] = [];
 
   for (const bucket of order) {

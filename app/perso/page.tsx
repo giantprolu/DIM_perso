@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadDefs } from "@/lib/manifest-client";
 import {
-  ARMOR_SLOT_ORDER,
   ARMOR_STAT_HASHES,
   BUCKET_SUBCLASS,
   BUNGIE_ROOT,
@@ -11,9 +10,7 @@ import {
   ITEM_STATE_LOCKED,
   ITEM_TYPE_ARMOR,
   ITEM_TYPE_WEAPON,
-  STAT_CAP,
   TIER_EXOTIC,
-  WEAPON_SLOT_ORDER,
 } from "@/lib/destiny-constants";
 import {
   ApiError,
@@ -33,6 +30,8 @@ import {
 import { buildItemDetail, type ItemDetail } from "@/lib/item-detail";
 import { instanceFromProfile } from "@/lib/item-info";
 import { useInspectItem } from "@/components/ItemInspector";
+import CharacterPicker from "@/components/CharacterPicker";
+import CharacterSheet, { GearTile, gearPower } from "@/components/CharacterSheet";
 import { useCanHover } from "@/lib/use-media";
 import type {
   Character,
@@ -303,13 +302,10 @@ export default function PersoPage() {
     ]
   );
 
-  const gearPower = useMemo(() => {
-    const gear = [...WEAPON_SLOT_ORDER, ...ARMOR_SLOT_ORDER]
-      .map((b) => byBucket.get(b)?.power ?? 0)
-      .filter((p) => p > 0);
-    if (gear.length === 0) return 0;
-    return Math.floor(gear.reduce((a, v) => a + v, 0) / gear.length);
-  }, [byBucket]);
+  const equipmentPower = useMemo(
+    () => gearPower((b) => byBucket.get(b)?.power),
+    [byBucket]
+  );
 
   const statNames = useMemo(
     () =>
@@ -480,48 +476,22 @@ export default function PersoPage() {
         onMouseEnter={() => canHover && swappable && openHover(bucket)}
         onMouseLeave={() => canHover && closeHoverSoon()}
       >
-        {item ? (
-          <button
-            className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded overflow-hidden border-2 transition-all ${
-              selectedItem === item.instanceId
-                ? "border-primary scale-105"
-                : item.isExotic
-                  ? "border-[#ceae33] hover:border-primary"
-                  : "border-base-300 hover:border-primary"
-            }`}
-            title={`${item.name} — ✦ ${item.power}`}
-            onClick={() => {
-              if (canHover) {
+        <GearTile
+          item={item}
+          selected={!!item && selectedItem === item.instanceId}
+          onClick={() => {
+            if (canHover) {
+              if (item) {
                 setSelectedItem(
                   selectedItem === item.instanceId ? null : item.instanceId
                 );
-                return;
               }
-              setSelectedItem(item.instanceId);
-              if (swappable) setHoverBucket(bucket);
-            }}
-          >
-            {item.icon && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`${BUNGIE_ROOT}${item.icon}`}
-                alt={item.name}
-                className="w-full h-full"
-              />
-            )}
-            {item.power > 0 && (
-              <span className="absolute bottom-0 right-0 bg-black/75 text-[10px] font-mono px-1 text-[#ffd970]">
-                {item.power}
-              </span>
-            )}
-          </button>
-        ) : (
-          <button
-            className="block w-12 h-12 sm:w-14 sm:h-14 rounded bg-base-300/40 border border-base-300"
-            aria-label="Emplacement vide"
-            onClick={() => !canHover && swappable && setHoverBucket(bucket)}
-          />
-        )}
+              return;
+            }
+            if (item) setSelectedItem(item.instanceId);
+            if (swappable) setHoverBucket(bucket);
+          }}
+        />
 
         {open && swappable && !canHover && (
           <div
@@ -641,30 +611,14 @@ export default function PersoPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="char-row">
-        {characters.map((c) => (
-          <button
-            key={c.characterId}
-            className={`char-btn${selectedChar === c.characterId ? " active" : ""}`}
-            style={
-              c.emblemBackgroundPath
-                ? {
-                    backgroundImage: `url(${BUNGIE_ROOT}${c.emblemBackgroundPath})`,
-                  }
-                : undefined
-            }
-            onClick={() => {
-              setSelectedChar(c.characterId);
-              setSelectedItem(null);
-            }}
-          >
-            <div className="char-class">
-              {CLASS_NAMES[c.classType] ?? "Gardien"}
-            </div>
-            <div className="char-light">✦ {c.light}</div>
-          </button>
-        ))}
-      </div>
+      <CharacterPicker
+        characters={characters}
+        selected={selectedChar}
+        onSelect={(id) => {
+          setSelectedChar(id);
+          setSelectedItem(null);
+        }}
+      />
 
       {log.length > 0 && (
         <div className="action-log">
@@ -676,79 +630,17 @@ export default function PersoPage() {
 
       {/* ── Écran personnage ── */}
       <div className="card bg-base-200 shadow overflow-visible">
-        <div
-          className="relative bg-cover bg-center rounded-box"
-          style={
-            currentChar?.emblemBackgroundPath
-              ? {
-                  backgroundImage: `linear-gradient(to bottom, rgba(20,24,31,.72), rgba(20,24,31,.94)), url(${BUNGIE_ROOT}${currentChar.emblemBackgroundPath})`,
-                }
-              : undefined
-          }
-        >
-          {/*
-            Sur téléphone, le Gardien passe en tête et ses deux colonnes
-            d'équipement deviennent deux rangées : côte à côte, elles ne
-            laisseraient au centre que la moitié de l'écran.
-          */}
-          <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-12 p-3 sm:p-6">
-            <div className="flex flex-row md:flex-col gap-2 md:gap-2.5 order-2 md:order-1">
-              <div className="mr-1.5 md:mr-0 md:mb-1">
-                <ItemTile bucket={BUCKET_SUBCLASS} side="left" />
-              </div>
-              {WEAPON_SLOT_ORDER.map((b) => (
-                <ItemTile key={b} bucket={b} side="left" />
-              ))}
-            </div>
-
-            <div className="flex flex-col items-center gap-3 order-1 md:order-2 w-full max-w-xs md:w-auto md:max-w-none md:min-w-56 py-2">
-              <div className="text-xs tracking-[0.3em] uppercase opacity-60">
-                {CLASS_NAMES[currentChar?.classType ?? 0]}
-              </div>
-              <div className="flex items-start gap-1">
-                <span className="text-[#ffd970] text-2xl leading-none mt-2">
-                  ✦
-                </span>
-                <span className="text-5xl sm:text-6xl font-light text-[#ffd970] leading-none">
-                  {currentChar?.light ?? 0}
-                </span>
-              </div>
-              <div className="text-[10px] tracking-[0.25em] uppercase opacity-50">
-                Puissance
-              </div>
-              <div className="text-xs opacity-60">
-                Équipement : ✦ {gearPower}
-              </div>
-
-              <div className="w-full flex flex-col gap-1.5 mt-2">
-                {ARMOR_STAT_HASHES.map((h, i) => {
-                  const v = currentChar?.stats?.[String(h)] ?? 0;
-                  return (
-                    <div key={h} className="flex items-center gap-2">
-                      <span className="text-[11px] w-20 opacity-70 truncate">
-                        {statNames[i]}
-                      </span>
-                      <progress
-                        className="progress progress-primary h-1.5 flex-1"
-                        value={v}
-                        max={STAT_CAP}
-                      />
-                      <span className="text-[11px] font-mono w-8 text-right">
-                        {v}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex flex-row md:flex-col gap-2 md:gap-2.5 order-3">
-              {ARMOR_SLOT_ORDER.map((b) => (
-                <ItemTile key={b} bucket={b} side="right" />
-              ))}
-            </div>
-          </div>
-        </div>
+        <CharacterSheet
+          heading={CLASS_NAMES[currentChar?.classType ?? 0] ?? "Gardien"}
+          light={currentChar?.light ?? 0}
+          equipmentPower={equipmentPower}
+          stats={ARMOR_STAT_HASHES.map(
+            (h) => currentChar?.stats?.[String(h)] ?? 0
+          )}
+          statNames={statNames}
+          emblemBackgroundPath={currentChar?.emblemBackgroundPath}
+          renderSlot={(bucket, side) => <ItemTile bucket={bucket} side={side} />}
+        />
       </div>
 
       <p className="text-xs opacity-50 text-center">
